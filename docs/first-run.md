@@ -65,12 +65,25 @@ project into the panel and watch the placeholder guard work.
 ### 4. Install the plugin
 
 **Settings → Manage Plugins → Settings → Install from file**, then choose the
-zip. GeoLibre validates the manifest, unpacks the archive in the browser, stores
-it in IndexedDB, and loads it immediately. There is no network fetch and no CORS
-involved.
+zip. GeoLibre validates the manifest, unpacks the archive in the browser and
+stores it in IndexedDB. There is no network fetch and no CORS involved.
 
-The **Disturbance Check** panel should take the Style panel slot on the right,
-with the Layer panel still visible beside it.
+### 4b. Activate it
+
+**Nothing appears yet, and that is expected.** Installing *registers* a plugin;
+it does not *activate* it. GeoLibre rejects `activeByDefault` on external
+plugins outright, so there is no way for a plugin to switch itself on.
+
+Open the **Plugins** menu in the top toolbar and click **Disturbance Check**.
+The menu lists one toggle per registered plugin under an "Activate plugin"
+heading.
+
+The panel then takes the Style panel slot on the right, with the Layer panel
+still visible beside it. A **Disturbance Check** menu also appears in the
+toolbar, holding the documentation library.
+
+If the plugin is not in the Plugins menu at all, the install did not take.
+Re-open Manage Plugins and check it is listed under Install from file.
 
 ### 5. Run a check
 
