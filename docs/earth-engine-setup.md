@@ -1,86 +1,190 @@
 # Earth Engine setup
 
-Two things must exist before anyone can run a check: a Cloud project that pays
-for Earth Engine compute, and an OAuth client that lets the browser sign people
-in against it. Neither can be avoided. Earth Engine refuses every compute call
-made without a bound project, and Google will not issue a token to an origin it
-does not recognise.
+Two things must exist before anyone can run a check: a Cloud project registered
+for Earth Engine that pays for compute, and an OAuth client that lets the
+browser sign people in against it. Neither can be avoided. Earth Engine refuses
+every compute call made without a registered project, and Google will not issue
+a token to an origin it does not recognise.
 
-## 1. The Cloud project
+These steps describe the **Google Auth Platform**, the console section at
+`console.cloud.google.com/auth`. It replaced the older "APIs and Services →
+OAuth consent screen" and "Credentials" pages, and the settings live in
+different places now:
 
-1. Open the [Google Cloud console](https://console.cloud.google.com/) and either
-   select an existing project or create one. The project ID, not the display
-   name, is what the tool asks for.
-2. Attach a billing account under **Billing**. Earth Engine's commercial tier
-   refuses compute on a project with no billing account, even inside the free
-   monthly allowance.
-3. Enable the **Earth Engine API** under **APIs and Services > Library**.
-4. Register the project for Earth Engine at
-   [code.earthengine.google.com/register](https://code.earthengine.google.com/register)
-   and choose the commercial or noncommercial path that matches your use.
+| Google Auth Platform | Formerly | What it holds |
+|---|---|---|
+| **Branding** | Consent screen, first page | App name, support email, logo |
+| **Audience** | Consent screen, user type | Internal or External, test users, publishing status |
+| **Clients** | Credentials | OAuth client IDs and authorized origins |
+| **Data Access** | Consent screen, scopes | Which scopes the app requests |
+| **Verification Center** | Verification | Review status, only if External and published |
 
-### Granting colleagues access
+## 1. Register the project for Earth Engine
+
+Earth Engine access is per Cloud project and must be registered explicitly at
+[code.earthengine.google.com/register](https://code.earthengine.google.com/register).
+Registration asks you to choose a track, and the choice is a licensing
+commitment rather than a billing preference.
+
+**Commercial** is the correct track for verification and validation work carried
+out for a fee, which includes ACR IFM verification. It requires a Cloud billing
+account.
+
+**Noncommercial** is free and is limited to academic research, education,
+nonprofit and government use. Using it for paid assurance work would breach the
+terms, and the exposure sits with the organisation, not with Google's
+enforcement appetite.
+
+If you are unsure which applies, that is a question for whoever signs the
+engagement letter, not a technical one.
+
+## 2. Attach billing
+
+Under **Billing** in the Cloud console, link a billing account to the project.
+
+A project with no billing account is the single most common reason a run fails:
+every Earth Engine call returns 403, with no obvious connection to billing in
+the error. The Google Auth Platform overview flags this under **Project Checkup
+→ Developer identity → Billing account verification**.
+
+Then enable the **Earth Engine API** under **APIs and Services → Library**.
+
+## 3. Choose the audience
+
+**Audience** offers Internal or External, and which you can pick is decided for
+you.
+
+**Internal** is only available when the project belongs to a Google Workspace
+organisation, and it limits sign-in to accounts in that organisation. It skips
+Google's verification review entirely. If your team is on Workspace and the
+project sits inside it, choose this and move on.
+
+**External** is the only option when the project sits under a personal Google
+account. To check which you have, look at the project's Organisation in the
+console project picker: `No organisation` means External is your only choice.
+
+### External without verification
+
+External apps have a publishing status. Left in **Testing**, the app works
+immediately with no review, for up to 100 users, each of whom you add by address
+under **Audience → Test users**. Anyone not on that list is refused.
+
+For a verification team this is usually the right answer. Add your colleagues as
+test users and stop there. Publishing to Production would trigger a review of the
+Earth Engine scope, which is more process than a small internal tool warrants.
+
+One caveat normally applies to Testing mode: refresh tokens expire after seven
+days. It does not bite here, because this tool holds a short-lived access token
+of about an hour and asks the operator to sign in again rather than keeping a
+long-lived session. The design and the constraint happen to agree.
+
+## 4. Set the scope
+
+Under **Data Access**, add exactly one scope:
+
+```
+https://www.googleapis.com/auth/earthengine
+```
+
+That is the only scope this tool requests, and getting it down to one took a
+deliberate change worth knowing about.
+
+The Earth Engine JavaScript client defines `DEFAULT_AUTH_SCOPES_` as three
+scopes, not one:
+
+| Scope | Google's classification |
+|---|---|
+| `auth/earthengine` | Sensitive |
+| `auth/cloud-platform` | Sensitive, broad Cloud access |
+| `auth/drive` | **Restricted**, full read and write on the user's Drive |
+
+Any application calling `ee.data.authenticateViaOauth` in the ordinary way gets
+all three. The consent screen then asks colleagues to grant "See, edit, create
+and delete all of your Google Drive files" for a tool that never touches Drive,
+and an External app requesting a restricted scope faces Google's most demanding
+review, including a third-party security assessment.
+
+The function takes an undocumented sixth argument, `suppressDefaultScopes`.
+Internally it calls `mergeAuthScopes_(!suppressDefaultScopes, false,
+extraScopes)`, so passing `true` drops the defaults and uses only what you
+supply. This tool passes it, which is why the consent screen asks for Earth
+Engine and nothing else.
+
+So add the one scope above under **Data Access**, and do not add
+`devstorage.full_control` or Drive. Compute, `getMap` and `reduceRegion` all run
+under the Earth Engine scope alone. Cloud Storage would only be needed if export
+were added, and that should be a deliberate decision at the time.
+
+## 5. Create the OAuth client
+
+Under **Clients → Create client**, choose application type **Web application**.
+
+The type matters. If the project already has clients, they are probably
+**Desktop** clients created for the QGIS and geemap workflow. A Desktop client
+cannot authenticate a browser app, and reusing one produces an
+`unauthorized_client` error that gives no hint about the cause. Create a new
+one.
+
+Under **Authorized JavaScript origins**, add the exact origin the app is served
+from. Origin means scheme and host with no path:
+
+```
+https://seamusrobertmurphy.github.io
+https://geolibre.app
+http://localhost:5173
+```
+
+Add all three now. The first is your Pages deployment, the second lets you test
+inside a hosted GeoLibre before deploying anything, and the third is for local
+development. Google permits origins you do not control; verification governs the
+consent screen, not this list.
+
+A path here is the most common cause of `redirect_uri_mismatch`. It is
+`https://seamusrobertmurphy.github.io`, never
+`https://seamusrobertmurphy.github.io/disturbance-checker/`.
+
+Leave **Authorized redirect URIs** empty. This flow is the JavaScript implicit
+flow and does not use one.
+
+Copy the client ID. It looks like
+`141292844612-abc123def456.apps.googleusercontent.com`.
+
+## 6. Grant colleagues access
 
 Colleagues sign in as themselves. There is no way for a browser-only tool to run
 on one person's credentials, because the only mechanism that would allow it is a
 service account key, which cannot live in a public bundle without being a leaked
 credential. What you can do is make everyone's compute bill to your project.
 
-For each colleague, under **IAM and Admin > IAM**, grant on the project:
+For each colleague, under **IAM and Admin → IAM**, grant on the project:
 
 | Role | Why |
 |------|-----|
 | `roles/serviceusage.serviceUsageConsumer` | Lets them make API calls that bill to this project |
 | `roles/earthengine.viewer` | Read access to Earth Engine resources |
 
-Each colleague also needs a Google account that is registered for Earth Engine.
+If the app is External and in Testing, they must *also* be listed under
+**Audience → Test users**. The two lists are separate and both are enforced. A
+colleague with the IAM roles but no test-user entry is refused at sign-in; one
+with a test-user entry but no IAM roles signs in and then gets 403 on every
+call.
 
-## 2. The OAuth client
+## 7. Where the client ID goes
 
-The tool ships with no client ID, and sign-in fails until one is configured. The
-client must be registered in the same Cloud project.
+Three places, in the order the tool checks them.
 
-1. Go to **APIs and Services > OAuth consent screen**. Choose **Internal** if
-   everyone using the tool is in your Google Workspace organisation, which
-   avoids Google's verification review entirely. Choose **External** only if you
-   need accounts outside it, and expect a review before more than 100 people can
-   sign in.
-2. Add the scope `https://www.googleapis.com/auth/earthengine`.
-3. Go to **APIs and Services > Credentials**, then
-   **Create Credentials > OAuth client ID**, and choose **Web application**.
-4. Under **Authorized JavaScript origins**, add the exact origin the app is
-   served from. Origin means scheme and host with no path:
-
-   ```
-   https://seamusrobertmurphy.github.io
-   ```
-
-   Not `https://seamusrobertmurphy.github.io/disturbance-checker/`. A path here
-   is the single most common reason sign-in fails with `redirect_uri_mismatch`.
-   Add `http://localhost:5173` as well if you want local development to work.
-5. Leave **Authorized redirect URIs** empty. This flow is the JavaScript implicit
-   flow and does not use one.
-6. Copy the client ID. It looks like
-   `141292844612-abc123def456.apps.googleusercontent.com`.
-
-## 3. Where the client ID goes
-
-There are three places, in the order the tool checks them.
-
-**A repository secret, for the deployed site.** This is the normal path. In this
-repository go to **Settings > Secrets and variables > Actions > New repository
-secret**, name it `GEE_OAUTH_CLIENT_ID`, and paste the client ID. The deploy
-workflow reads it and passes it to the GeoLibre build as
-`VITE_GEE_OAUTH_CLIENT_ID`, which Vite inlines at build time.
+**A repository secret, for the deployed site.** In this repository, **Settings →
+Secrets and variables → Actions → New repository secret**, named
+`GEE_OAUTH_CLIENT_ID`. The deploy workflow passes it to the build as
+`VITE_GEE_OAUTH_CLIENT_ID`, which Vite inlines.
 
 The client ID is not a secret in the cryptographic sense; it ships in the
-JavaScript bundle and is visible to anyone who opens the page. It is stored as
-an Actions secret to keep it out of the git history, not because exposure breaks
-anything. What protects the project is the authorized origin list and the IAM
-grants, not the confidentiality of this string.
+JavaScript bundle and is visible to anyone who opens the page. It is kept as an
+Actions secret to stay out of the git history, not because exposure breaks
+anything. What protects the project is the authorized origin list, the test-user
+list and the IAM grants.
 
-**An environment variable, for a local build.** When building the GeoLibre app
-yourself:
+**An environment variable, for a local build:**
 
 ```bash
 VITE_GEE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com \
@@ -88,30 +192,46 @@ GEOLIBRE_APP_BASE=/disturbance-checker/ \
 npm run build
 ```
 
-**A URL parameter, for a one-off.** Append `?gee_client_id=...` to the page URL.
-This is useful for testing a second client without rebuilding, and is the only
-option if you are loading the plugin into a GeoLibre deployment you do not
-control.
+**A URL parameter, for a one-off:** append `?gee_client_id=...`. This is how you
+test inside a GeoLibre deployment you do not control, and it needs no rebuild.
 
 The Cloud project ID follows the same pattern: `VITE_GEE_PROJECT_ID` at build
-time, or `?ee_project_id=` at runtime. If you set it at build time the panel
-still shows it and still asks the operator to confirm, because compute bills to
-whoever is signed in and that decision should be deliberate.
+time, or `?ee_project_id=` at runtime. Setting it at build time still leaves the
+panel asking the operator to confirm, because compute bills to whoever is signed
+in and that should be deliberate.
+
+## What the Project Checkup warnings mean
+
+The Google Auth Platform overview shows a Project Checkup panel. Not all of its
+warnings matter equally.
+
+**Billing account verification** matters. It is the blocker described in step 2.
+
+**Updated contact information** and **Project contacts** are trust signals used
+during verification review. If the app stays Internal, or External in Testing,
+they are cosmetic and can be left. Fill them in before ever publishing to
+Production.
 
 ## Troubleshooting
 
-**`redirect_uri_mismatch` or `origin_mismatch` on sign-in.** The origin serving
-the page is not in the authorized JavaScript origins list, or was entered with a
-trailing path or slash. Changes can take a few minutes to propagate.
+**`redirect_uri_mismatch` or `origin_mismatch`.** The serving origin is not in
+the authorized JavaScript origins list, or was entered with a trailing path or
+slash. Changes take a few minutes to propagate.
+
+**`unauthorized_client`.** Almost always a Desktop client being used from a
+browser. Create a Web application client.
+
+**`access_denied` immediately after choosing an account.** The app is External
+and in Testing, and that account is not on the test-user list.
 
 **The popup opens and closes with nothing happening.** The browser blocked it.
-The popup must be opened from a user gesture, which is why sign-in happens on
-the Run button rather than automatically on load.
+Popups need a user gesture, which is why sign-in happens on the Run button
+rather than on page load.
 
-**`Earth Engine client library not initialized` or 403 on every call.** The
-Cloud project has no billing account, the Earth Engine API is not enabled, or
-the signed-in user lacks `serviceUsageConsumer` on it.
+**403 on every call after a successful sign-in.** No billing account, the Earth
+Engine API is not enabled, the project is not registered for Earth Engine, or
+the user lacks `serviceUsageConsumer`.
 
-**Sign-in works, then everything fails an hour later.** That is the access token
-expiring, and it is expected. The panel shows the remaining session time and
-offers a re-run, which regenerates the tiles from the recorded parameters.
+**Sign-in works, then everything fails an hour later.** The access token
+expiring, which is expected. The panel shows remaining session time and offers a
+re-run that regenerates the tiles from the recorded parameters.

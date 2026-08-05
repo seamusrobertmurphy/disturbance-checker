@@ -182,7 +182,10 @@ for (const guide of guides) {
 // Every guide in docs/ should be registered, or it is invisible in the app.
 const registered = new Set(guides.map((guide) => guide.id));
 for (const file of readdirSync(docsDir)) {
-  if (!file.endsWith(".md") || file === "README.md") continue;
+  // Skip README (the GitHub index, not an in-app guide) and dot-prefixed files.
+  // macOS writes AppleDouble sidecars such as `._first-run.md` when the repo
+  // lives on a non-HFS volume, and they are not documents.
+  if (file.startsWith(".") || !file.endsWith(".md") || file === "README.md") continue;
   const id = file.replace(/\.md$/, "");
   assert.ok(
     registered.has(id),

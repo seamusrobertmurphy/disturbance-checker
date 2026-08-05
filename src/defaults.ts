@@ -114,7 +114,10 @@ export const PLACEHOLDER_EE_PROJECT = "murphys-deforisk";
 // VITE_GEE_OAUTH_CLIENT_ID, or at runtime by the ?gee_client_id URL parameter.
 export const FALLBACK_OAUTH_CLIENT_ID = "";
 
-export const EE_SCOPES = [
-  "https://www.googleapis.com/auth/earthengine",
-  "https://www.googleapis.com/auth/devstorage.full_control",
-];
+// Only the Earth Engine scope is requested. The Cloud Storage scope
+// (devstorage.full_control) that the Code Editor also asks for is a *restricted*
+// scope: it makes the consent screen more alarming, and it would drag any future
+// External verification into Google's restricted-scope review. Nothing here
+// needs it, because compute, getMap and reduceRegion all run under the Earth
+// Engine scope alone. Add it back only alongside export to Cloud Storage.
+export const EE_SCOPES = ["https://www.googleapis.com/auth/earthengine"];

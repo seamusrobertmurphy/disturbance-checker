@@ -7,6 +7,28 @@ export interface EarthEngineApi {
   [key: string]: any;
 }
 
+/**
+ * The parts of the client's auth surface this module depends on, recorded here
+ * because the published package ships no types and the sixth argument to
+ * authenticateViaOauth is undocumented.
+ *
+ *   authenticateViaOauth(
+ *     clientId, onSuccess, onFailure,
+ *     extraScopes, onImmediateFailed, suppressDefaultScopes)
+ *
+ * Internally it calls mergeAuthScopes_(!suppressDefaultScopes, false,
+ * extraScopes), so passing true for the last argument is the only way to stop
+ * DEFAULT_AUTH_SCOPES_ (earthengine, cloud-platform, drive) being requested.
+ */
+export type AuthenticateViaOauth = (
+  clientId: string,
+  onSuccess: () => void,
+  onFailure: (error: unknown) => void,
+  extraScopes?: string[],
+  onImmediateFailed?: () => void,
+  suppressDefaultScopes?: boolean,
+) => void;
+
 let cached: EarthEngineApi | null = null;
 let initialisedProject: string | null = null;
 
@@ -136,12 +158,21 @@ export async function authenticate(clientId: string): Promise<void> {
       reject(new Error("Earth Engine OAuth authentication is unavailable."));
       return;
     }
+    // The sixth argument is suppressDefaultScopes. Without it the client merges
+    // in DEFAULT_AUTH_SCOPES_, which is earthengine *plus* cloud-platform *plus*
+    // full Google Drive. Drive is a restricted scope: colleagues would be asked
+    // to grant "see, edit, create and delete all of your Google Drive files" for
+    // a tool that never touches Drive, and any External verification would fall
+    // into Google's restricted-scope review. Suppressing the defaults and
+    // passing EE_SCOPES explicitly means the consent screen asks for Earth
+    // Engine and nothing else.
     ee.data.authenticateViaOauth(
       clientId,
       onSuccess,
       onFailure,
       EE_SCOPES,
       onImmediateFailed,
+      true,
     );
   });
 }
