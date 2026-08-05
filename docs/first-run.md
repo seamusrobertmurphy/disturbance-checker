@@ -147,6 +147,15 @@ returns an empty array, and `analyseHistogram` reports the empty shape.
 wide areas. The histogram runs at scale 20 with `maxPixels` 1e10. Shrink the
 AOI, or add `bestEffort: true` in `computeHistogram`.
 
+**`undefined is not an object (evaluating 'ee.Reducer.sum')`.** Earth Engine
+returned no algorithm list. Classes such as `ee.Reducer` do not exist in the
+client bundle at all; they are generated at initialise time from the list the
+server sends. An empty list does not raise, so initialisation reports success
+and the failure surfaces on first use, pointing nowhere near the cause. It
+almost always means the Cloud project is not registered for Earth Engine, or
+the Earth Engine API is not enabled on it. The tool now checks for this
+straight after initialise and names the project in the error.
+
 **Class areas all zero.** The grouped reducer assumes band 0 is area and band 1
 is class, from `ee.Image.pixelArea().divide(10000).addBands(classified)`. If the
 band order differs, `groupField: 1` reads the wrong band.

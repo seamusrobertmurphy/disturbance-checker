@@ -287,16 +287,38 @@ export async function initialise(projectId: string): Promise<EarthEngineApi> {
     ee.initialize(
       null,
       null,
-      () => finish(() => {
-        initialisedProject = project;
-        resolve();
-      }),
+      () => finish(() => resolve()),
       (error: unknown) => finish(() => reject(new Error(describeError(error)))),
       null,
       project,
     );
   });
+
+  assertGeneratedClasses(ee, project);
+  initialisedProject = project;
   return ee;
+}
+
+/**
+ * Confirm the dynamically generated classes are present.
+ *
+ * Classes such as ee.Reducer, ee.Kernel and ee.Classifier do not exist in the
+ * client bundle at all: grep it for "Reducer" and there are no matches. They are
+ * built by initializeGeneratedClasses_() from the algorithm list the server
+ * returns during initialize().
+ *
+ * When that list comes back empty the client does not raise. It reports
+ * initialisation as successful, and the first use of a generated class fails
+ * much later with "undefined is not an object (evaluating 'ee.Reducer.sum')",
+ * which points nowhere near the real cause. Checking here converts that into an
+ * error naming the project and what to check about it.
+ */
+function assertGeneratedClasses(ee: EarthEngineApi, project: string): void {
+  if (typeof ee.Reducer?.sum === "function") return;
+
+  throw new Error(
+    `Earth Engine initialised against project "${project}" but returned no algorithm list, so core operations such as ee.Reducer are unavailable. This is what a project that is not registered for Earth Engine looks like from the client. Check that "${project}" is registered at code.earthengine.google.com/register, that the Earth Engine API is enabled on it, and that your account has access to it.`,
+  );
 }
 
 export async function connect(
