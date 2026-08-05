@@ -8,17 +8,44 @@ export const S2_COLLECTION = "COPERNICUS/S2_SR_HARMONIZED";
 // that propagates a ~0.04 false dNDVI signal. HARMONIZED back-corrects it.
 export const S2_SCALE_DIVISOR = 10000;
 
-// SOP Step 4: QA60 cloud (bit 10) and cirrus (bit 11).
+/**
+ * How cloud is removed before compositing.
+ *
+ * "cloud-score-plus" is the method both production scripts
+ * (TUVSUD_DisturbanceCheck-QGIS.py and -ArcGIS.py) actually run. It links the
+ * Cloud Score+ collection, masks per pixel on the `cs` quality band, then takes
+ * a qualityMosaic on that band, which selects the single clearest observation
+ * per pixel rather than averaging.
+ *
+ * "qa60-median" is the older path. It survives in both scripts, commented out in
+ * the QGIS one and labelled "legacy" in the ArcGIS one, and it is what the SOP
+ * PDF documents. Kept selectable so a historical result can be reproduced.
+ */
+export type CloudMethod = "cloud-score-plus" | "qa60-median";
+
+export const DEFAULT_CLOUD_METHOD: CloudMethod = "cloud-score-plus";
+
+// Cloud Score+ (production path).
+export const CLOUD_SCORE_PLUS_COLLECTION =
+  "GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED";
+export const CLOUD_SCORE_BAND = "cs";
+/** Per-pixel clarity floor. 0.50 to 0.65 is stricter and keeps fewer pixels. */
+export const DEFAULT_CLEAR_THRESHOLD = 0.4;
+
+// QA60 legacy path: cloud (bit 10) and cirrus (bit 11).
 export const QA60_CLOUD_BIT = 10;
 export const QA60_CIRRUS_BIT = 11;
 
-// SOP Step 3 Cloud ceiling. 30 default; 20 in PNW/coastal AK; 40 only if median
-// composites show striping or NoData wedges.
-export const DEFAULT_MAX_CLOUD = 30;
+/**
+ * Scene-level cloud ceiling, used by the legacy QA60 path only. Cloud Score+
+ * masks per pixel and needs no scene filter, which is why the production
+ * scripts define MAX_CLOUD but never apply it on the active path.
+ */
+export const DEFAULT_MAX_CLOUD = 10;
 
-// SOP Step 3 Temporal window. Jul-Sep for both pre and post. Sentinel-2 revisit
-// is 5 days, so two months yields >= 8 cloud-filtered scenes per pixel.
-export const DEFAULT_WINDOW_START_MONTH_DAY = "07-01";
+// Production scripts use August to September for both windows. The SOP PDF says
+// July to September; the scripts are narrower and are what actually runs.
+export const DEFAULT_WINDOW_START_MONTH_DAY = "08-01";
 export const DEFAULT_WINDOW_END_MONTH_DAY = "09-01";
 
 // SOP Operational tips, Patchwork composites: the median normaliser is unstable
@@ -94,16 +121,41 @@ export const DELTAS: Record<DeltaId, DeltaSpec> = {
 
 // SOP Step 7: 0 = undisturbed, 1 = Low, 2 = Moderate, 3 = High. Class 0 is
 // masked so the underlying composite shows through for visual cross-check.
-export const CLASS_PALETTE = ["#ffffb2", "#fd8d3c", "#bd0026"];
+// Palettes match vis_dndvi / vis_dndmi / vis_dnbr in the production scripts, so
+// a layer rendered here looks like the same layer rendered in QGIS. dNDMI is
+// deliberately a different ramp from the other two.
+export const CLASS_PALETTES: Record<DeltaId, string[]> = {
+  dNDVI: ["#FFEDA0", "#FC4E2A", "#800026"],
+  dNDMI: ["#FEB24C", "#FD8D3C", "#B10026"],
+  dNBR: ["#FFEDA0", "#FC4E2A", "#800026"],
+};
+export const CLASS_PALETTE = CLASS_PALETTES.dNDVI;
 export const CLASS_LABELS = ["Low", "Moderate", "High"];
 
-export const CONTINUOUS_PALETTE = [
-  "#2b83ba",
-  "#abdda4",
-  "#ffffbf",
-  "#fdae61",
-  "#d7191c",
-];
+// vis_delta in the production scripts.
+export const CONTINUOUS_PALETTE = ["#1a9850", "#ffffbf", "#fc8d59", "#d73027"];
+export const CONTINUOUS_MIN = -0.3;
+export const CONTINUOUS_MAX = 0.5;
+
+// vis_ndvi and vis_ndmi: the single-date index layers.
+export const NDVI_VIS = {
+  min: -0.2,
+  max: 0.8,
+  palette: ["#d73027", "#fc8d59", "#fee08b", "#d9ef8b", "#1a9850"],
+};
+export const NDMI_VIS = {
+  min: -0.5,
+  max: 0.5,
+  palette: ["#d73027", "#fc8d59", "#ffffbf", "#91bfdb", "#4575b4"],
+};
+
+// vis_rgb: note the gamma, which the earlier implementation omitted.
+export const RGB_VIS = {
+  bands: ["B4", "B3", "B2"],
+  min: 0.02,
+  max: 0.25,
+  gamma: 1.2,
+};
 
 // SOP Step 2.1: Earth Engine refuses any compute call against the modern API
 // without a bound Cloud project. This placeholder is shown on launch and must be

@@ -83,7 +83,22 @@ assert.equal(manifest.version, pkg.version, "plugin.json and package.json versio
 const state = plugin.getProjectState();
 assert.equal(state.version, 1);
 assert.equal(state.periods.length, 1, "expected one default reporting period");
-assert.equal(state.maxCloud, 30, "SOP default cloud ceiling is 30");
+// The production scripts set MAX_CLOUD = 10, and use it only on the legacy
+// QA60 path; Cloud Score+ masks per pixel and needs no scene filter.
+assert.equal(state.maxCloud, 10, "production scripts set MAX_CLOUD = 10");
+assert.equal(
+  state.cloudMethod,
+  "cloud-score-plus",
+  "Cloud Score+ is what both production scripts run; QA60 is the legacy path",
+);
+assert.equal(state.clearThreshold, 0.4, "CLEAR_THRESHOLD is 0.40 in both scripts");
+// Both scripts composite August to September, narrower than the SOP PDF's
+// July to September.
+assert.ok(
+  state.periods[0].preStart.endsWith("-08-01") &&
+    state.periods[0].preEnd.endsWith("-09-01"),
+  "default window should be August to September, matching the scripts",
+);
 assert.deepEqual(
   state.breaks.dNDMI,
   { low: 0.15, moderate: 0.3, high: 0.45 },
@@ -165,9 +180,10 @@ const docsDir = join(root, "docs");
 for (const guide of guides) {
   assert.ok(guide.title, `guide ${guide.id} has no title`);
   assert.ok(guide.summary, `guide ${guide.id} has no summary`);
+  // Derived from the registry, so adding an audience does not break this.
   assert.ok(
-    ["operator", "setup", "maintainer"].includes(guide.audience),
-    `guide ${guide.id} has an unknown audience`,
+    module.AUDIENCE_ORDER.includes(guide.audience),
+    `guide ${guide.id} has audience "${guide.audience}", which is not in AUDIENCE_ORDER and so would never be listed`,
   );
   // Rendered, not raw: a markdown heading that survived as "#" would mean the
   // build-time transform silently did nothing.

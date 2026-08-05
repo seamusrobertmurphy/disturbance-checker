@@ -2,10 +2,18 @@ import {
   AREA_MAX_PIXELS,
   AREA_SCALE,
   Breaks,
-  CLASS_PALETTE,
+  CLASS_PALETTES,
+  CLOUD_SCORE_BAND,
+  CLOUD_SCORE_PLUS_COLLECTION,
+  CONTINUOUS_MAX,
+  CONTINUOUS_MIN,
   CONTINUOUS_PALETTE,
+  CloudMethod,
   DELTAS,
   DeltaId,
+  NDMI_VIS,
+  NDVI_VIS,
+  RGB_VIS,
   GSW_IMAGE,
   GSW_OCCURRENCE_THRESHOLD,
   HISTOGRAM_MAX,
@@ -54,6 +62,13 @@ export interface PeriodResult {
   deltas: Record<DeltaId, DeltaResult>;
   preRgbTileUrl: string;
   postRgbTileUrl: string;
+  /** Single-date index layers, hidden by default but present for inspection. */
+  indexTileUrls: {
+    preNdvi: string;
+    postNdvi: string;
+    preNdmi: string;
+    postNdmi: string;
+  };
   utmCrs: string;
   aoiAreaHa: number;
 }
@@ -62,6 +77,8 @@ export interface RunParams {
   aoi: Aoi;
   periods: Period[];
   maxCloud: number;
+  cloudMethod: CloudMethod;
+  clearThreshold: number;
   breaks: Record<DeltaId, Breaks>;
 }
 
@@ -102,24 +119,62 @@ export interface Composite {
   collection: any;
 }
 
+export interface CompositeOptions {
+  method: CloudMethod;
+  /** Cloud Score+ per-pixel clarity floor. */
+  clearThreshold: number;
+  /** Scene-level ceiling, legacy QA60 path only. */
+  maxCloud: number;
+}
+
+/**
+ * Build the pre or post composite.
+ *
+ * The two methods are genuinely different reductions, not variations on one.
+ *
+ * Cloud Score+ links the `cs` quality band onto each scene, masks per pixel
+ * below the clarity threshold, then takes a **qualityMosaic** on that band: for
+ * every pixel it keeps the single clearest observation in the window. No
+ * averaging happens, so there is no median normaliser to destabilise on thin
+ * collections, and no scene-level cloud filter is needed because masking is
+ * per pixel. This is what both production scripts run.
+ *
+ * QA60 masks on the cloud and cirrus bits, filters whole scenes by
+ * CLOUDY_PIXEL_PERCENTAGE, then takes a **median**. Retained so a result
+ * produced before the Cloud Score+ switch can be reproduced.
+ */
 export function buildComposite(
   ee: EarthEngineApi,
   roi: unknown,
   start: string,
   end: string,
-  maxCloud: number,
+  options: CompositeOptions,
 ): Composite {
-  const collection = ee
+  const base = ee
     .ImageCollection(S2_COLLECTION)
     .filterDate(start, end)
-    .filterBounds(roi)
-    .filter(ee.Filter.lte("CLOUDY_PIXEL_PERCENTAGE", maxCloud))
+    .filterBounds(roi);
+
+  if (options.method === "cloud-score-plus") {
+    const csPlus = ee.ImageCollection(CLOUD_SCORE_PLUS_COLLECTION);
+    const linked = base.linkCollection(csPlus, [CLOUD_SCORE_BAND]);
+    const collection = linked.map((image: any) =>
+      image.updateMask(
+        image.select(CLOUD_SCORE_BAND).gte(options.clearThreshold),
+      ),
+    );
+    const image = collection
+      .qualityMosaic(CLOUD_SCORE_BAND)
+      .divide(S2_SCALE_DIVISOR)
+      .clip(roi);
+    return { image, collection };
+  }
+
+  const collection = base
+    .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", options.maxCloud))
     .map((image: unknown) => maskClouds(ee, image));
 
-  const image = collection
-    .median()
-    .divide(S2_SCALE_DIVISOR)
-    .clip(roi);
+  const image = collection.median().divide(S2_SCALE_DIVISOR).clip(roi);
 
   return { image, collection };
 }
@@ -279,19 +334,24 @@ export async function runPeriod(
   onProgress: (message: string) => void,
 ): Promise<PeriodResult> {
   onProgress(`${period.id}: building composites`);
+  const compositeOptions = {
+    method: params.cloudMethod,
+    clearThreshold: params.clearThreshold,
+    maxCloud: params.maxCloud,
+  };
   const pre = buildComposite(
     ee,
     roi,
     period.preStart,
     period.preEnd,
-    params.maxCloud,
+    compositeOptions,
   );
   const post = buildComposite(
     ee,
     roi,
     period.postStart,
     period.postEnd,
-    params.maxCloud,
+    compositeOptions,
   );
 
   const [preSceneCount, postSceneCount] = await Promise.all([
@@ -302,10 +362,29 @@ export async function runPeriod(
   onProgress(`${period.id}: computing deltas`);
   const deltas = computeDeltas(ee, pre.image, post.image);
 
-  const rgbVis = { bands: ["B4", "B3", "B2"], min: 0, max: 0.3 };
-  const [preRgbTileUrl, postRgbTileUrl] = await Promise.all([
-    getTileUrl(pre.image, rgbVis),
-    getTileUrl(post.image, rgbVis),
+  const preIdx = {
+    ndvi: pre.image.normalizedDifference(["B8", "B4"]).rename("NDVI"),
+    ndmi: pre.image.normalizedDifference(["B8", "B11"]).rename("NDMI"),
+  };
+  const postIdx = {
+    ndvi: post.image.normalizedDifference(["B8", "B4"]).rename("NDVI"),
+    ndmi: post.image.normalizedDifference(["B8", "B11"]).rename("NDMI"),
+  };
+
+  const [
+    preRgbTileUrl,
+    postRgbTileUrl,
+    preNdvi,
+    postNdvi,
+    preNdmi,
+    postNdmi,
+  ] = await Promise.all([
+    getTileUrl(pre.image, RGB_VIS),
+    getTileUrl(post.image, RGB_VIS),
+    getTileUrl(preIdx.ndvi, NDVI_VIS),
+    getTileUrl(postIdx.ndvi, NDVI_VIS),
+    getTileUrl(preIdx.ndmi, NDMI_VIS),
+    getTileUrl(postIdx.ndmi, NDMI_VIS),
   ]);
 
   const deltaResults = {} as Record<DeltaId, DeltaResult>;
@@ -324,11 +403,11 @@ export async function runPeriod(
         getTileUrl(shown, {
           min: 1,
           max: 3,
-          palette: CLASS_PALETTE,
+          palette: CLASS_PALETTES[id],
         }),
         getTileUrl(delta, {
-          min: -0.3,
-          max: 0.6,
+          min: CONTINUOUS_MIN,
+          max: CONTINUOUS_MAX,
           palette: CONTINUOUS_PALETTE,
         }),
       ]);
@@ -349,6 +428,7 @@ export async function runPeriod(
     deltas: deltaResults,
     preRgbTileUrl,
     postRgbTileUrl,
+    indexTileUrls: { preNdvi, postNdvi, preNdmi, postNdmi },
     utmCrs,
     aoiAreaHa,
   };

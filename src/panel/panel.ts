@@ -26,6 +26,8 @@ import {
   connect,
   describeError,
   isSessionExpired,
+  preloadEarthEngine,
+  rejectedClientIdValue,
   rememberProjectId,
   resolveOauthClientId,
   sessionRemainingMs,
@@ -126,6 +128,10 @@ export class DisturbancePanel {
   mount(container: HTMLElement): void {
     this.container = container;
     container.classList.add("dc-root");
+    // Resolve the Earth Engine client now, so that when Run is pressed the
+    // sign-in popup opens inside the click's gesture window instead of after a
+    // 1.7 MB import. Safari suppresses popups that arrive late.
+    preloadEarthEngine();
     this.rerender();
     this.startClock();
   }
@@ -658,7 +664,20 @@ export class DisturbancePanel {
     );
     body.appendChild(status);
 
-    if (!resolveOauthClientId()) {
+    const clientId = resolveOauthClientId();
+    const rejected = rejectedClientIdValue();
+
+    if (rejected) {
+      body.appendChild(
+        this.notice(
+          "warning",
+          "Ignoring an invalid client ID",
+          `"${rejected}" is not a Google OAuth client ID, so the built-in one is being used instead. Remove gee_client_id from the address bar to clear this. Real client IDs end in .apps.googleusercontent.com.`,
+        ),
+      );
+    }
+
+    if (!clientId) {
       body.appendChild(
         this.notice(
           "warning",
@@ -896,6 +915,49 @@ export class DisturbancePanel {
           "One threshold set applies to every period, so inter-period change stays comparable.",
         ),
       );
+    }
+
+    const methodSelect = el("select", "dc-input");
+    for (const [value, label] of [
+      ["cloud-score-plus", "Cloud Score+ (production)"],
+      ["qa60-median", "QA60 + median (legacy)"],
+    ] as const) {
+      const option = el("option", "", label);
+      option.value = value;
+      if (this.state.cloudMethod === value) option.selected = true;
+      methodSelect.appendChild(option);
+    }
+    methodSelect.addEventListener("change", () =>
+      this.patch({ cloudMethod: methodSelect.value as State["cloudMethod"] }),
+    );
+    body.appendChild(
+      field(
+        "Cloud removal",
+        methodSelect,
+        this.state.cloudMethod === "cloud-score-plus"
+          ? "Masks each pixel on the Cloud Score+ quality band, then keeps the single clearest observation per pixel. No median, so thin collections do not destabilise, and no scene-level cloud filter is needed."
+          : "Masks the QA60 cloud and cirrus bits, discards scenes above the ceiling below, then takes a per-pixel median. The older method; use it only to reproduce a result produced before the switch.",
+      ),
+    );
+
+    if (this.state.cloudMethod === "cloud-score-plus") {
+      const clear = input("number", String(this.state.clearThreshold), (value) => {
+        const parsed = Number.parseFloat(value);
+        if (Number.isFinite(parsed)) {
+          this.patch({ clearThreshold: Math.min(1, Math.max(0, parsed)) });
+        }
+      });
+      clear.step = "0.05";
+      clear.min = "0";
+      clear.max = "1";
+      body.appendChild(
+        field(
+          "Clear-pixel threshold",
+          clear,
+          "Minimum Cloud Score+ clarity for a pixel to be used. 0.40 is the production default; 0.50 to 0.65 is stricter and keeps fewer pixels.",
+        ),
+      );
+      return body;
     }
 
     const cloud = el("input", "dc-range");
@@ -1273,6 +1335,8 @@ export class DisturbancePanel {
             aoi: this.state.aoi,
             periods: this.state.periods,
             maxCloud: this.state.maxCloud,
+            cloudMethod: this.state.cloudMethod,
+            clearThreshold: this.state.clearThreshold,
             breaks: this.state.breaks,
           },
           utmCrs,
@@ -1355,6 +1419,12 @@ export class DisturbancePanel {
 
       add(`${slug}-pre-rgb`, `${prefix}Pre RGB`, result.preRgbTileUrl, false);
       add(`${slug}-post-rgb`, `${prefix}Post RGB`, result.postRgbTileUrl, false);
+
+      // Single-date index layers, as the production scripts render them.
+      add(`${slug}-pre-ndvi`, `${prefix}Pre NDVI`, result.indexTileUrls.preNdvi, false);
+      add(`${slug}-post-ndvi`, `${prefix}Post NDVI`, result.indexTileUrls.postNdvi, false);
+      add(`${slug}-pre-ndmi`, `${prefix}Pre NDMI`, result.indexTileUrls.preNdmi, false);
+      add(`${slug}-post-ndmi`, `${prefix}Post NDMI`, result.indexTileUrls.postNdmi, false);
 
       for (const id of ["dNDVI", "dNDMI", "dNBR"] as DeltaId[]) {
         add(

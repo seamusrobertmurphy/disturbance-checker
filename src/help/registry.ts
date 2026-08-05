@@ -1,6 +1,7 @@
 import earthEngineSetup from "../../docs/earth-engine-setup.md";
 import firstRun from "../../docs/first-run.md";
 import interpretingResults from "../../docs/interpreting-results.md";
+import methods from "../../docs/methods.md";
 import revisionNotes from "../../docs/revision-notes.md";
 import usingTheTool from "../../docs/using-the-tool.md";
 
@@ -10,7 +11,7 @@ import usingTheTool from "../../docs/using-the-tool.md";
 //
 // To add a guide: write docs/<name>.md and add an entry here. Nothing else.
 
-export type Audience = "operator" | "setup" | "maintainer";
+export type Audience = "operator" | "setup" | "reference" | "maintainer";
 
 export interface Guide {
   /** Matches the markdown filename without its extension, so cross-links resolve. */
@@ -24,10 +25,16 @@ export interface Guide {
 export const AUDIENCE_LABELS: Record<Audience, string> = {
   operator: "Running a check",
   setup: "Setting the tool up",
+  reference: "Method and reference",
   maintainer: "Maintaining the tool",
 };
 
-export const AUDIENCE_ORDER: Audience[] = ["operator", "setup", "maintainer"];
+export const AUDIENCE_ORDER: Audience[] = [
+  "operator",
+  "setup",
+  "reference",
+  "maintainer",
+];
 
 export const GUIDES: Guide[] = [
   {
@@ -45,6 +52,14 @@ export const GUIDES: Guide[] = [
       "What the layers mean, reading the histogram before trusting the map, and what to confirm before raising anything.",
     audience: "operator",
     html: interpretingResults,
+  },
+  {
+    id: "methods",
+    title: "Methods reference",
+    summary:
+      "The full processing chain: cloud removal, indices, differencing, histograms, classification and areas, with every constant and every divergence from the SOP and the production scripts.",
+    audience: "reference",
+    html: methods,
   },
   {
     id: "earth-engine-setup",

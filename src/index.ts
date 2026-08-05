@@ -204,4 +204,4 @@ export { plugin };
 // Exported for the smoke test. Detecting the plot identifier column wrongly
 // means unlabelled points on every screenshot, so the heuristic is tested.
 export { detectLabelField } from "./vector/import";
-export { GUIDES, findGuide } from "./help/registry";
+export { GUIDES, findGuide, AUDIENCE_ORDER } from "./help/registry";

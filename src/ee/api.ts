@@ -80,12 +80,39 @@ export async function loadEarthEngine(): Promise<EarthEngineApi> {
   return resolved;
 }
 
+/**
+ * Google OAuth client IDs always end in `.apps.googleusercontent.com`. Checking
+ * that lets an obviously wrong value be ignored rather than passed to the auth
+ * library, which accepts it and then never calls back, leaving the panel stuck
+ * on "Signing in to Earth Engine" forever. A pasted placeholder such as
+ * YOUR_CLIENT_ID is the common case.
+ */
+export function isLikelyOauthClientId(value: string): boolean {
+  return /^[\w-]+\.apps\.googleusercontent\.com$/.test(value.trim());
+}
+
+/** Set when a supplied client ID was rejected, so the panel can say why. */
+let rejectedClientId: string | null = null;
+
+export function rejectedClientIdValue(): string | null {
+  return rejectedClientId;
+}
+
 export function resolveOauthClientId(): string {
+  rejectedClientId = null;
+
+  const candidates: string[] = [];
   const fromUrl = new URLSearchParams(window.location.search).get("gee_client_id");
-  if (fromUrl && fromUrl.trim()) return fromUrl.trim();
+  if (fromUrl && fromUrl.trim()) candidates.push(fromUrl.trim());
   const fromEnv = (import.meta as unknown as { env?: Record<string, unknown> }).env
     ?.VITE_GEE_OAUTH_CLIENT_ID;
-  if (typeof fromEnv === "string" && fromEnv.trim()) return fromEnv.trim();
+  if (typeof fromEnv === "string" && fromEnv.trim()) candidates.push(fromEnv.trim());
+
+  for (const candidate of candidates) {
+    if (isLikelyOauthClientId(candidate)) return candidate;
+    rejectedClientId = candidate;
+  }
+
   return FALLBACK_OAUTH_CLIENT_ID;
 }
 
@@ -125,10 +152,32 @@ export function currentUserEmail(ee: EarthEngineApi): string | null {
   }
 }
 
+/**
+ * Resolve the Earth Engine client ahead of time.
+ *
+ * Sign-in ends in a popup, and browsers only allow a popup inside the gesture
+ * that triggered it. Safari is the strictest. Loading the 1.7 MB client lazily
+ * at sign-in time puts an await between the click and the popup, which is long
+ * enough for the gesture to lapse and the popup to be suppressed silently.
+ * Calling this when the panel mounts means the click reaches the popup with
+ * nothing async in between.
+ */
+export function preloadEarthEngine(): void {
+  void loadEarthEngine().catch(() => undefined);
+}
+
+/** Sign-in never legitimately takes this long; past it, something is wrong. */
+const AUTH_TIMEOUT_MS = 90_000;
+
 export async function authenticate(clientId: string): Promise<void> {
   if (!clientId) {
     throw new Error(
       "No OAuth client ID is configured. Set VITE_GEE_OAUTH_CLIENT_ID at build time, or pass ?gee_client_id= in the URL.",
+    );
+  }
+  if (!isLikelyOauthClientId(clientId)) {
+    throw new Error(
+      `"${clientId}" is not a Google OAuth client ID. They end in .apps.googleusercontent.com. Remove the gee_client_id parameter from the URL to use the built-in client.`,
     );
   }
   const ee = await loadEarthEngine();
@@ -139,11 +188,35 @@ export async function authenticate(clientId: string): Promise<void> {
   }
 
   await new Promise<void>((resolve, reject) => {
-    const onSuccess = () => {
-      authenticatedAt = Date.now();
-      resolve();
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      fn();
     };
-    const onFailure = (error: unknown) => reject(new Error(describeError(error)));
+
+    // The auth library calls neither callback in several failure modes: a
+    // blocked popup, a client ID the consent screen rejects, or a popup the
+    // user closes. Without this the promise never settles and the panel sits on
+    // "Signing in to Earth Engine" indefinitely.
+    const timer = window.setTimeout(() => {
+      finish(() =>
+        reject(
+          new Error(
+            "Earth Engine sign-in did not complete. The sign-in window was most likely blocked: allow pop-ups for this site and press Run again. In Safari, check Settings > Websites > Pop-up Windows.",
+          ),
+        ),
+      );
+    }, AUTH_TIMEOUT_MS);
+
+    const onSuccess = () =>
+      finish(() => {
+        authenticatedAt = Date.now();
+        resolve();
+      });
+    const onFailure = (error: unknown) =>
+      finish(() => reject(new Error(describeError(error))));
     const onImmediateFailed = () => {
       // Third-party cookie blocking defeats the silent flow. Fall back to the
       // popup, which requires a user gesture and is why sign-in is a button.
@@ -190,14 +263,35 @@ export async function initialise(projectId: string): Promise<EarthEngineApi> {
   ee.data?.setProject?.(project);
 
   await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      fn();
+    };
+
+    // The Cloud project is the sixth argument. A client version that orders
+    // these differently, or a project the account cannot reach, leaves both
+    // callbacks unfired rather than raising.
+    const timer = window.setTimeout(() => {
+      finish(() =>
+        reject(
+          new Error(
+            `Earth Engine did not finish initialising against project "${project}". Check the project id, that the Earth Engine API is enabled on it, and that your account has access.`,
+          ),
+        ),
+      );
+    }, 60_000);
+
     ee.initialize(
       null,
       null,
-      () => {
+      () => finish(() => {
         initialisedProject = project;
         resolve();
-      },
-      (error: unknown) => reject(new Error(describeError(error))),
+      }),
+      (error: unknown) => finish(() => reject(new Error(describeError(error)))),
       null,
       project,
     );

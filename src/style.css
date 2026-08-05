@@ -34,6 +34,7 @@
   }
 }
 
+:root.dark .dc-root,
 :root[data-theme="dark"] .dc-root {
   --dc-fg: #e6edf3;
   --dc-fg-muted: #9aa7b4;
@@ -42,7 +43,7 @@
   --dc-accent: #58a6ff;
 }
 
-:root[data-theme="light"] .dc-root {
+:root:not(.dark)[data-theme="light"] .dc-root {
   --dc-fg: #1a1d21;
   --dc-fg-muted: #5b6470;
   --dc-surface: rgba(0, 0, 0, 0.03);
@@ -613,6 +614,7 @@ select.dc-input {
   }
 }
 
+:root.dark .dc-help,
 :root[data-theme="dark"] .dc-help {
   --dc-fg: #e6edf3;
   --dc-fg-muted: #9aa7b4;
@@ -621,7 +623,7 @@ select.dc-input {
   --dc-accent: #58a6ff;
 }
 
-:root[data-theme="light"] .dc-help {
+:root:not(.dark)[data-theme="light"] .dc-help {
   --dc-fg: #1a1d21;
   --dc-fg-muted: #5b6470;
   --dc-surface: rgba(0, 0, 0, 0.03);

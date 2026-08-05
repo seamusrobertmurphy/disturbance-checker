@@ -1,4 +1,6 @@
 import {
+  CLOUD_SCORE_BAND,
+  CLOUD_SCORE_PLUS_COLLECTION,
   DELTAS,
   DeltaId,
   HISTOGRAM_MAX,
@@ -38,7 +40,15 @@ export function buildManifest(state: State, runAt: Date): string {
   lines.push(`Earth Engine project  ${state.projectId}`);
   lines.push(`Area of interest  ${describeAoi(state)}`);
   lines.push(`Collection        ${S2_COLLECTION}`);
-  lines.push(`Cloud ceiling     CLOUDY_PIXEL_PERCENTAGE <= ${state.maxCloud}`);
+  if (state.cloudMethod === "cloud-score-plus") {
+    lines.push(
+      `Cloud removal     Cloud Score+ (${CLOUD_SCORE_PLUS_COLLECTION}), band "${CLOUD_SCORE_BAND}" >= ${state.clearThreshold}, qualityMosaic`,
+    );
+  } else {
+    lines.push(
+      `Cloud removal     QA60 cloud+cirrus bitmask, CLOUDY_PIXEL_PERCENTAGE < ${state.maxCloud}, per-pixel median`,
+    );
+  }
   lines.push(
     `Histogram         fixedHistogram(${HISTOGRAM_MIN}, ${HISTOGRAM_MAX}, ${HISTOGRAM_STEPS}) at scale ${HISTOGRAM_SCALE}, maxPixels ${HISTOGRAM_MAX_PIXELS.toExponential()}`,
   );

@@ -2,6 +2,9 @@ import {
   Breaks,
   DELTAS,
   DeltaId,
+  CloudMethod,
+  DEFAULT_CLEAR_THRESHOLD,
+  DEFAULT_CLOUD_METHOD,
   DEFAULT_MAX_CLOUD,
   DEFAULT_WINDOW_END_MONTH_DAY,
   DEFAULT_WINDOW_START_MONTH_DAY,
@@ -42,6 +45,8 @@ export interface State {
   aoiLabel: string;
   periods: Period[];
   maxCloud: number;
+  cloudMethod: CloudMethod;
+  clearThreshold: number;
 
   context: Record<ContextRole, ContextLayer | null>;
 
@@ -93,6 +98,8 @@ export function createState(): State {
     aoiLabel: "",
     periods: [defaultPeriod("RP1", thisYear - 2, thisYear - 1)],
     maxCloud: DEFAULT_MAX_CLOUD,
+    cloudMethod: DEFAULT_CLOUD_METHOD,
+    clearThreshold: DEFAULT_CLEAR_THRESHOLD,
 
     context: { boundary: null, smz: null, plots: null },
 
@@ -144,6 +151,8 @@ export interface PersistedState {
   aoiLabel: string;
   periods: Period[];
   maxCloud: number;
+  cloudMethod: CloudMethod;
+  clearThreshold: number;
   breaks: Record<DeltaId, Breaks>;
   justifications: Record<DeltaId, string>;
   context: Record<ContextRole, ContextLayer | null>;
@@ -180,6 +189,8 @@ export function toPersisted(state: State): PersistedState {
     aoiLabel: state.aoiLabel,
     periods: state.periods,
     maxCloud: state.maxCloud,
+    cloudMethod: state.cloudMethod,
+    clearThreshold: state.clearThreshold,
     breaks: state.breaks,
     justifications: state.justifications,
     context: {
@@ -209,6 +220,11 @@ export function fromPersisted(state: State, raw: unknown): State {
         : state.periods,
     maxCloud:
       typeof persisted.maxCloud === "number" ? persisted.maxCloud : state.maxCloud,
+    cloudMethod: persisted.cloudMethod ?? state.cloudMethod,
+    clearThreshold:
+      typeof persisted.clearThreshold === "number"
+        ? persisted.clearThreshold
+        : state.clearThreshold,
     breaks: persisted.breaks ?? state.breaks,
     justifications: persisted.justifications ?? state.justifications,
     context: {
