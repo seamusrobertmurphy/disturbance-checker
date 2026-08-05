@@ -1,0 +1,514 @@
+/* Plugin stylesheets are injected globally into the host document, so every
+   selector here is prefixed with dc- and scoped under .dc-root. Colours are
+   expressed as CSS variables that follow the host's light and dark themes. */
+
+.dc-root {
+  --dc-fg: #1a1d21;
+  --dc-fg-muted: #5b6470;
+  --dc-bg: transparent;
+  --dc-surface: rgba(0, 0, 0, 0.03);
+  --dc-border: rgba(0, 0, 0, 0.14);
+  --dc-accent: #1f6feb;
+  --dc-warning-bg: rgba(212, 128, 0, 0.12);
+  --dc-warning-border: rgba(212, 128, 0, 0.45);
+  --dc-info-bg: rgba(31, 111, 235, 0.09);
+  --dc-info-border: rgba(31, 111, 235, 0.35);
+
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dc-fg);
+  overflow-y: auto;
+}
+
+@media (prefers-color-scheme: dark) {
+  .dc-root {
+    --dc-fg: #e6edf3;
+    --dc-fg-muted: #9aa7b4;
+    --dc-surface: rgba(255, 255, 255, 0.05);
+    --dc-border: rgba(255, 255, 255, 0.16);
+    --dc-accent: #58a6ff;
+  }
+}
+
+:root[data-theme="dark"] .dc-root {
+  --dc-fg: #e6edf3;
+  --dc-fg-muted: #9aa7b4;
+  --dc-surface: rgba(255, 255, 255, 0.05);
+  --dc-border: rgba(255, 255, 255, 0.16);
+  --dc-accent: #58a6ff;
+}
+
+:root[data-theme="light"] .dc-root {
+  --dc-fg: #1a1d21;
+  --dc-fg-muted: #5b6470;
+  --dc-surface: rgba(0, 0, 0, 0.03);
+  --dc-border: rgba(0, 0, 0, 0.14);
+  --dc-accent: #1f6feb;
+}
+
+.dc-intro-text {
+  margin: 0 0 6px;
+  color: var(--dc-fg-muted);
+  font-size: 11px;
+}
+
+/* Sections ---------------------------------------------------------------- */
+
+.dc-section {
+  border-top: 1px solid var(--dc-border);
+}
+
+.dc-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 2px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dc-section-header:hover {
+  color: var(--dc-accent);
+}
+
+.dc-section-caret {
+  width: 10px;
+  font-size: 9px;
+  color: var(--dc-fg-muted);
+}
+
+.dc-section-number {
+  min-width: 12px;
+  color: var(--dc-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.dc-section-title {
+  font-weight: 600;
+}
+
+.dc-section-summary {
+  margin-left: auto;
+  max-width: 45%;
+  overflow: hidden;
+  color: var(--dc-fg-muted);
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dc-section-body {
+  padding: 2px 2px 12px;
+}
+
+.dc-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dc-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dc-row-center {
+  align-items: center;
+}
+
+.dc-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* Controls ---------------------------------------------------------------- */
+
+.dc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dc-field-label {
+  color: var(--dc-fg-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.dc-field-hint,
+.dc-hint {
+  color: var(--dc-fg-muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.dc-hint {
+  margin: 0;
+}
+
+.dc-input,
+.dc-textarea {
+  width: 100%;
+  padding: 5px 7px;
+  background: var(--dc-surface);
+  border: 1px solid var(--dc-border);
+  border-radius: 4px;
+  color: var(--dc-fg);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.dc-textarea {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.dc-input:focus,
+.dc-textarea:focus {
+  outline: 2px solid var(--dc-accent);
+  outline-offset: -1px;
+}
+
+.dc-input-inline {
+  width: auto;
+  max-width: 90px;
+  font-weight: 600;
+}
+
+.dc-range {
+  flex: 1;
+  min-width: 120px;
+  accent-color: var(--dc-accent);
+}
+
+.dc-cloud-readout {
+  min-width: 40px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.dc-button {
+  padding: 5px 10px;
+  background: var(--dc-surface);
+  border: 1px solid var(--dc-border);
+  border-radius: 4px;
+  color: var(--dc-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.dc-button:hover:not(:disabled) {
+  border-color: var(--dc-accent);
+  color: var(--dc-accent);
+}
+
+.dc-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dc-button-primary {
+  background: var(--dc-accent);
+  border-color: var(--dc-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.dc-button-primary:hover:not(:disabled) {
+  color: #fff;
+  filter: brightness(1.08);
+}
+
+/* Run bar ----------------------------------------------------------------- */
+
+.dc-runbar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 2px;
+  border-top: 1px solid var(--dc-border);
+}
+
+.dc-runbar .dc-button-primary {
+  width: 100%;
+  padding: 8px;
+}
+
+.dc-runbar-hint {
+  color: var(--dc-fg-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* Notices ----------------------------------------------------------------- */
+
+.dc-notice {
+  padding: 8px 10px;
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.dc-notice-warning {
+  background: var(--dc-warning-bg);
+  border-color: var(--dc-warning-border);
+}
+
+.dc-notice-info {
+  background: var(--dc-info-bg);
+  border-color: var(--dc-info-border);
+}
+
+.dc-notice-title {
+  margin-bottom: 3px;
+  font-weight: 600;
+}
+
+.dc-notice-detail {
+  color: var(--dc-fg);
+}
+
+.dc-notice-source,
+.dc-notice-item + .dc-notice-item {
+  margin-top: 4px;
+}
+
+.dc-notice-source {
+  color: var(--dc-fg-muted);
+  font-size: 10px;
+  font-style: italic;
+}
+
+.dc-notice .dc-button {
+  margin-top: 8px;
+}
+
+/* Status ------------------------------------------------------------------ */
+
+.dc-status-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dc-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.dc-dot-on {
+  background: #2da44e;
+}
+
+.dc-dot-off {
+  background: var(--dc-fg-muted);
+}
+
+.dc-status-text {
+  color: var(--dc-fg-muted);
+  font-size: 11px;
+}
+
+.dc-clock {
+  padding: 5px 8px;
+  background: var(--dc-surface);
+  border-radius: 4px;
+  color: var(--dc-fg-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Periods and results ----------------------------------------------------- */
+
+.dc-period,
+.dc-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--dc-border);
+  border-radius: 5px;
+}
+
+.dc-period-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dc-result-title {
+  font-weight: 600;
+}
+
+.dc-result-meta {
+  color: var(--dc-fg-muted);
+  font-size: 10.5px;
+}
+
+.dc-delta {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--dc-border);
+}
+
+.dc-delta-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dc-delta-name {
+  font-weight: 600;
+  font-size: 11.5px;
+}
+
+.dc-badge {
+  padding: 1px 5px;
+  background: var(--dc-warning-bg);
+  border: 1px solid var(--dc-warning-border);
+  border-radius: 999px;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dc-breaks {
+  color: var(--dc-fg-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Histogram --------------------------------------------------------------- */
+
+.dc-histogram {
+  display: block;
+  width: 100%;
+  height: 96px;
+  overflow: visible;
+  touch-action: none;
+}
+
+.dc-histogram-bar {
+  fill: var(--dc-accent);
+  fill-opacity: 0.45;
+}
+
+.dc-histogram-axis {
+  stroke: var(--dc-border);
+  stroke-width: 1;
+}
+
+.dc-histogram-zero {
+  stroke: var(--dc-fg-muted);
+  stroke-width: 1;
+  stroke-dasharray: 1 3;
+}
+
+.dc-histogram-default {
+  stroke: var(--dc-fg-muted);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  stroke-opacity: 0.55;
+}
+
+.dc-histogram-suggested {
+  stroke: #2da44e;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 2;
+}
+
+.dc-histogram-break {
+  stroke-width: 1.75;
+}
+
+.dc-histogram-break-low {
+  stroke: #e3a008;
+}
+
+.dc-histogram-break-moderate {
+  stroke: #fd8d3c;
+}
+
+.dc-histogram-break-high {
+  stroke: #bd0026;
+}
+
+.dc-histogram-handle {
+  fill: transparent;
+  cursor: ew-resize;
+}
+
+.dc-histogram-handle:focus {
+  fill: var(--dc-accent);
+  fill-opacity: 0.18;
+  outline: none;
+}
+
+.dc-histogram-tick {
+  fill: var(--dc-fg-muted);
+  font-size: 8px;
+}
+
+/* Tables ------------------------------------------------------------------ */
+
+.dc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dc-table th {
+  padding: 2px 4px;
+  color: var(--dc-fg-muted);
+  font-weight: 500;
+  text-align: right;
+}
+
+.dc-table th:first-child,
+.dc-table td:first-child {
+  color: var(--dc-fg-muted);
+  text-align: left;
+}
+
+.dc-table td {
+  padding: 3px 4px;
+  text-align: right;
+}
+
+.dc-table-total {
+  font-weight: 600;
+}
+
+/* Manifest ---------------------------------------------------------------- */
+
+.dc-manifest {
+  max-height: 260px;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  background: var(--dc-surface);
+  border: 1px solid var(--dc-border);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: pre;
+}
