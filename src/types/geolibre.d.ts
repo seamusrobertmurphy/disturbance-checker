@@ -25,10 +25,44 @@ export interface GeoLibreRightPanelRegistration {
 export interface GeoLibreFloatingPanelRegistration {
   id: string;
   title: string;
-  width?: number;
-  height?: number;
-  render: (container: HTMLElement) => void;
-  destroy?: () => void;
+  icon?: string;
+  /** Preferred card width in px; the host clamps it to a sensible range. */
+  defaultWidth?: number;
+  /** May return a cleanup function the host runs when the panel closes. */
+  render: (container: HTMLElement) => void | (() => void);
+  onOpen?: () => void;
+  onClose?: () => void;
+}
+
+export interface GeoLibreToolbarMenuAction {
+  type?: "action";
+  id: string;
+  label: string;
+  disabled?: boolean;
+  onSelect: () => void;
+}
+
+export interface GeoLibreToolbarSubmenu {
+  type: "submenu";
+  id: string;
+  label: string;
+  items: GeoLibreToolbarMenuItem[];
+}
+
+export interface GeoLibreToolbarSeparator {
+  type: "separator";
+  id?: string;
+}
+
+export type GeoLibreToolbarMenuItem =
+  | GeoLibreToolbarMenuAction
+  | GeoLibreToolbarSubmenu
+  | GeoLibreToolbarSeparator;
+
+export interface GeoLibreToolbarMenu {
+  id: string;
+  label: string;
+  items: GeoLibreToolbarMenuItem[];
 }
 
 export interface GeoLibreTileLayerOptions {
@@ -110,7 +144,11 @@ export interface GeoLibreAppAPI {
   registerFloatingPanel?: (
     panel: GeoLibreFloatingPanelRegistration,
   ) => () => void;
+  unregisterFloatingPanel?: (id: string) => void;
   openFloatingPanel?: (id: string) => boolean;
+  closeFloatingPanel?: (id: string) => void;
+  registerToolbarMenu?: (menu: GeoLibreToolbarMenu) => () => void;
+  unregisterToolbarMenu?: (id: string) => void;
 }
 
 export interface GeoLibrePlugin {

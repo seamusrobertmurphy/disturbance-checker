@@ -8,7 +8,7 @@
 // drifted from the plugin object.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -156,6 +156,59 @@ assert.equal(
 );
 assert.equal(module.detectLabelField(["geometry", "area_ha"]), null);
 
+// Documentation library ------------------------------------------------------
+
+const guides = module.GUIDES;
+assert.ok(Array.isArray(guides) && guides.length > 0, "no guides are registered");
+
+const docsDir = join(root, "docs");
+for (const guide of guides) {
+  assert.ok(guide.title, `guide ${guide.id} has no title`);
+  assert.ok(guide.summary, `guide ${guide.id} has no summary`);
+  assert.ok(
+    ["operator", "setup", "maintainer"].includes(guide.audience),
+    `guide ${guide.id} has an unknown audience`,
+  );
+  // Rendered, not raw: a markdown heading that survived as "#" would mean the
+  // build-time transform silently did nothing.
+  assert.ok(guide.html.length > 500, `guide ${guide.id} rendered suspiciously short`);
+  assert.match(guide.html, /<h[12][^>]*>/, `guide ${guide.id} has no rendered headings`);
+  assert.ok(
+    existsSync(join(docsDir, `${guide.id}.md`)),
+    `guide ${guide.id} has no matching file in docs/`,
+  );
+}
+
+// Every guide in docs/ should be registered, or it is invisible in the app.
+const registered = new Set(guides.map((guide) => guide.id));
+for (const file of readdirSync(docsDir)) {
+  if (!file.endsWith(".md") || file === "README.md") continue;
+  const id = file.replace(/\.md$/, "");
+  assert.ok(
+    registered.has(id),
+    `docs/${file} exists but is not registered in src/help/registry.ts, so it cannot be reached in the app`,
+  );
+}
+
+// Cross-document links must have been rewritten and must resolve, or a guide
+// sends the reader to a dead end.
+let crossLinks = 0;
+for (const guide of guides) {
+  assert.doesNotMatch(
+    guide.html,
+    /href="[^"]*\.md"/,
+    `guide ${guide.id} still has an unrewritten .md link`,
+  );
+  for (const match of guide.html.matchAll(/href="#doc:([^"#]+)/g)) {
+    crossLinks += 1;
+    assert.ok(
+      module.findGuide(match[1]),
+      `guide ${guide.id} links to "${match[1]}", which is not a registered guide`,
+    );
+  }
+}
+assert.ok(crossLinks > 0, "no cross-document links were rewritten; the transform may be inert");
+
 // A host with no panel surface must fail activation rather than activate blind.
 assert.equal(
   plugin.activate({}),
@@ -164,5 +217,6 @@ assert.equal(
 );
 
 console.log("smoke test passed");
+console.log(`  guides   ${guides.length}, ${crossLinks} cross-links resolved`);
 console.log(`  bundle   ${(readFileSync(join(root, "dist/index.js")).length / 1024).toFixed(0)} kB`);
 console.log(`  plugin   ${plugin.id} v${plugin.version}`);

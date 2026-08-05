@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { markdownPlugin } from "./vite-plugins/markdown";
 
 // GeoLibre loads an external plugin by fetching `entry` from plugin.json and
 // running it through `import(URL.createObjectURL(...))`. Relative imports inside
@@ -9,6 +10,7 @@ import { defineConfig } from "vite";
 // field points at build/browser.js, which Vite picks up automatically for a
 // browser target, avoiding the Node-only googleapis dependency in build/main.js.
 export default defineConfig({
+  plugins: [markdownPlugin()],
   build: {
     target: "es2022",
     outDir: "dist",

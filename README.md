@@ -13,6 +13,15 @@ computation and displays the result.
 Outputs complement, but do not replace, ground plots and developer monitoring
 reports.
 
+## Documentation
+
+The [documentation library](docs/README.md) is the same set of guides that ships
+inside the app, reachable from the **Disturbance Check** menu in the toolbar and
+from the Help footer at the bottom of the tool panel.
+
+Start with [Using the tool](docs/using-the-tool.md) if you are running a check,
+[Earth Engine setup](docs/earth-engine-setup.md) if you are setting it up.
+
 ## The panel
 
 Seven sections, in order:

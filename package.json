@@ -1,6 +1,6 @@
 {
   "name": "tuvsud-disturbance-check",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Sentinel-2 NDVI/NDMI/NBR pre-post disturbance screening for ACR IFM verification, as a GeoLibre plugin.",
   "license": "MIT",
   "type": "module",
@@ -13,6 +13,7 @@
     "package": "npm run build && node scripts/package-plugin.mjs"
   },
   "devDependencies": {
+    "marked": "^18.0.9",
     "typescript": "^5.6.3",
     "vite": "^5.4.10"
   },

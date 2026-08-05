@@ -82,6 +82,7 @@ export class DisturbancePanel {
     private readonly app: GeoLibreAppAPI,
     private state: State,
     private readonly onStateChange: (state: State) => void,
+    private readonly onOpenGuide: (guideId: string | null) => void = () => {},
   ) {
     this.open = new Set(this.loadOpenSections());
     this.layers = new MapLayerManager(app);
@@ -202,6 +203,31 @@ export class DisturbancePanel {
     this.container.appendChild(
       this.section("findings", "7", "Findings", "", () => this.renderFindings()),
     );
+    this.container.appendChild(this.renderHelpFooter());
+  }
+
+  /**
+   * The library is also reachable from the toolbar menu. This footer exists
+   * because someone stuck mid-run will look at the panel in front of them
+   * before they look at the banner.
+   */
+  private renderHelpFooter(): HTMLElement {
+    const footer = el("div", "dc-help-footer");
+    footer.appendChild(el("span", "dc-help-footer-label", "Guides"));
+
+    const row = el("div", "dc-row");
+    row.appendChild(
+      button("Using the tool", () => this.onOpenGuide("using-the-tool")),
+    );
+    row.appendChild(
+      button("Interpreting results", () =>
+        this.onOpenGuide("interpreting-results"),
+      ),
+    );
+    row.appendChild(button("All guides", () => this.onOpenGuide(null)));
+    footer.appendChild(row);
+
+    return footer;
   }
 
   private renderIntro(): HTMLElement {

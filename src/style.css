@@ -566,6 +566,245 @@ select.dc-input {
   font-weight: 600;
 }
 
+/* Documentation library --------------------------------------------------- */
+
+.dc-help-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 10px 2px 4px;
+  border-top: 1px solid var(--dc-border);
+}
+
+.dc-help-footer-label {
+  color: var(--dc-fg-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dc-help {
+  --dc-fg: #1a1d21;
+  --dc-fg-muted: #5b6470;
+  --dc-surface: rgba(0, 0, 0, 0.03);
+  --dc-border: rgba(0, 0, 0, 0.14);
+  --dc-accent: #1f6feb;
+
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 70vh;
+  padding: 10px;
+  overflow-y: auto;
+  color: var(--dc-fg);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  .dc-help {
+    --dc-fg: #e6edf3;
+    --dc-fg-muted: #9aa7b4;
+    --dc-surface: rgba(255, 255, 255, 0.05);
+    --dc-border: rgba(255, 255, 255, 0.16);
+    --dc-accent: #58a6ff;
+  }
+}
+
+:root[data-theme="dark"] .dc-help {
+  --dc-fg: #e6edf3;
+  --dc-fg-muted: #9aa7b4;
+  --dc-surface: rgba(255, 255, 255, 0.05);
+  --dc-border: rgba(255, 255, 255, 0.16);
+  --dc-accent: #58a6ff;
+}
+
+:root[data-theme="light"] .dc-help {
+  --dc-fg: #1a1d21;
+  --dc-fg-muted: #5b6470;
+  --dc-surface: rgba(0, 0, 0, 0.03);
+  --dc-border: rgba(0, 0, 0, 0.14);
+  --dc-accent: #1f6feb;
+}
+
+.dc-help-intro {
+  margin: 0;
+  color: var(--dc-fg-muted);
+  font-size: 11px;
+}
+
+.dc-help-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dc-help-heading {
+  margin: 8px 0 2px;
+  color: var(--dc-fg-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dc-help-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 11px;
+  background: var(--dc-surface);
+  border: 1px solid var(--dc-border);
+  border-radius: 5px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dc-help-card:hover {
+  border-color: var(--dc-accent);
+}
+
+.dc-help-card-title {
+  font-weight: 600;
+}
+
+.dc-help-card-summary {
+  color: var(--dc-fg-muted);
+  font-size: 11px;
+}
+
+.dc-help-nav {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-bottom: 6px;
+  background: inherit;
+}
+
+/* Rendered markdown. Scoped tightly so it cannot restyle the host app. */
+
+.dc-help-body h1,
+.dc-help-body h2,
+.dc-help-body h3,
+.dc-help-body h4 {
+  margin: 18px 0 6px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.dc-help-body h1 {
+  margin-top: 0;
+  font-size: 17px;
+}
+
+.dc-help-body h2 {
+  padding-top: 12px;
+  border-top: 1px solid var(--dc-border);
+  font-size: 14px;
+}
+
+.dc-help-body h3 {
+  font-size: 12.5px;
+}
+
+.dc-help-body h4 {
+  color: var(--dc-fg-muted);
+  font-size: 11.5px;
+}
+
+.dc-help-body p,
+.dc-help-body ul,
+.dc-help-body ol {
+  margin: 0 0 10px;
+}
+
+.dc-help-body ul,
+.dc-help-body ol {
+  padding-left: 20px;
+}
+
+.dc-help-body li {
+  margin-bottom: 4px;
+}
+
+.dc-help-body a {
+  color: var(--dc-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.dc-help-body strong {
+  font-weight: 600;
+}
+
+.dc-help-body code {
+  padding: 1px 4px;
+  background: var(--dc-surface);
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.dc-help-body pre {
+  margin: 0 0 10px;
+  padding: 9px 11px;
+  overflow-x: auto;
+  background: var(--dc-surface);
+  border: 1px solid var(--dc-border);
+  border-radius: 4px;
+}
+
+.dc-help-body pre code {
+  padding: 0;
+  background: none;
+  font-size: 10.5px;
+  line-height: 1.5;
+  word-break: normal;
+}
+
+/* Wide tables scroll inside their own box rather than the page. */
+.dc-help-body table {
+  display: block;
+  width: 100%;
+  margin: 0 0 12px;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.dc-help-body th,
+.dc-help-body td {
+  padding: 5px 8px;
+  border: 1px solid var(--dc-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.dc-help-body th {
+  background: var(--dc-surface);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dc-help-body hr {
+  margin: 16px 0;
+  border: 0;
+  border-top: 1px solid var(--dc-border);
+}
+
+.dc-help-body blockquote {
+  margin: 0 0 10px;
+  padding-left: 10px;
+  border-left: 3px solid var(--dc-border);
+  color: var(--dc-fg-muted);
+}
+
 /* Manifest ---------------------------------------------------------------- */
 
 .dc-manifest {

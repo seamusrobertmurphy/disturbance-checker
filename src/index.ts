@@ -1,88 +1,187 @@
 import "./style.css";
+import { HelpLibrary } from "./help/panel";
+import { AUDIENCE_LABELS, AUDIENCE_ORDER, guidesFor } from "./help/registry";
 import { DisturbancePanel } from "./panel/panel";
 import { clearSession } from "./ee/api";
 import { State, createState, fromPersisted, toPersisted } from "./state";
-import { GeoLibreAppAPI, GeoLibrePlugin } from "./types/geolibre";
+import {
+  GeoLibreAppAPI,
+  GeoLibrePlugin,
+  GeoLibreToolbarMenuItem,
+} from "./types/geolibre";
 
 const PANEL_ID = "tuvsud-disturbance-check";
+const HELP_PANEL_ID = "tuvsud-disturbance-check-help";
+const TOOLBAR_MENU_ID = "tuvsud-disturbance-check-menu";
 
 let state: State = createState();
 let panel: DisturbancePanel | null = null;
-let unregister: (() => void) | null = null;
+let help: HelpLibrary | null = null;
+const teardown: Array<() => void> = [];
 
 function createPanel(app: GeoLibreAppAPI): DisturbancePanel {
-  return new DisturbancePanel(app, state, (next) => {
-    state = next;
-  });
+  return new DisturbancePanel(
+    app,
+    state,
+    (next) => {
+      state = next;
+    },
+    (guideId) => openHelp(app, guideId),
+  );
+}
+
+/** Both entry points into the library land in the same view. */
+function openHelp(app: GeoLibreAppAPI, guideId: string | null): void {
+  help?.open(guideId);
+  app.openFloatingPanel?.(HELP_PANEL_ID);
+}
+
+/** One submenu per audience, so the menu stays readable as guides are added. */
+function helpMenuItems(app: GeoLibreAppAPI): GeoLibreToolbarMenuItem[] {
+  const items: GeoLibreToolbarMenuItem[] = [
+    {
+      id: "help-all",
+      label: "All guides",
+      onSelect: () => openHelp(app, null),
+    },
+    { type: "separator", id: "help-sep" },
+  ];
+
+  for (const audience of AUDIENCE_ORDER) {
+    const guides = guidesFor(audience);
+    if (guides.length === 0) continue;
+    items.push({
+      type: "submenu",
+      id: `help-${audience}`,
+      label: AUDIENCE_LABELS[audience],
+      items: guides.map((guide) => ({
+        id: `help-${guide.id}`,
+        label: guide.title,
+        onSelect: () => openHelp(app, guide.id),
+      })),
+    });
+  }
+
+  return items;
 }
 
 const plugin: GeoLibrePlugin = {
   id: PANEL_ID,
   name: "Disturbance Check",
-  version: "0.1.0",
-  urlParameterNames: ["ee_project_id", "gee_client_id"],
+  version: "0.2.0",
+  urlParameterNames: ["ee_project_id", "gee_client_id", "dc_guide"],
 
   activate(app) {
+    help = new HelpLibrary();
     panel = createPanel(app);
 
     const registration = {
       id: PANEL_ID,
       title: "Disturbance Check",
       // Takes the Style panel slot so the Layer panel stays visible. The
-      // cross-check in SOP Appendix A.2 and A.3 depends on being able to toggle
-      // dNDVI against dNBR while the tool is open.
+      // cross-check between dNDVI and dNBR depends on being able to toggle
+      // layers while the tool is open.
       dock: "replace-style" as const,
       render: (container: HTMLElement) => panel?.mount(container),
       destroy: () => panel?.destroy(),
     };
 
+    let mounted = false;
     if (app.registerRightPanel) {
-      unregister = app.registerRightPanel(registration);
+      teardown.push(app.registerRightPanel(registration));
       app.openRightPanel?.(PANEL_ID);
-      return true;
-    }
-
-    if (app.registerFloatingPanel) {
-      unregister = app.registerFloatingPanel({
-        id: PANEL_ID,
-        title: registration.title,
-        width: 380,
-        height: 620,
-        render: registration.render,
-        destroy: registration.destroy,
-      });
+      mounted = true;
+    } else if (app.registerFloatingPanel) {
+      teardown.push(
+        app.registerFloatingPanel({
+          id: PANEL_ID,
+          title: registration.title,
+          defaultWidth: 380,
+          render: registration.render,
+        }),
+      );
       app.openFloatingPanel?.(PANEL_ID);
-      return true;
+      mounted = true;
     }
 
-    // Neither panel surface exists on this host build, so there is nowhere to
-    // draw. Report failure rather than activating invisibly.
-    panel = null;
-    return false;
+    if (!mounted) {
+      // Neither panel surface exists on this host build, so there is nowhere to
+      // draw. Report failure rather than activating invisibly.
+      panel = null;
+      help = null;
+      return false;
+    }
+
+    // The documentation library lives in its own floating card so a guide can
+    // be read beside the tool rather than instead of it.
+    if (app.registerFloatingPanel) {
+      teardown.push(
+        app.registerFloatingPanel({
+          id: HELP_PANEL_ID,
+          title: "Disturbance Check guides",
+          defaultWidth: 460,
+          render: (container: HTMLElement) => {
+            help?.mount(container);
+            return () => help?.destroy();
+          },
+        }),
+      );
+    }
+
+    if (app.registerToolbarMenu) {
+      teardown.push(
+        app.registerToolbarMenu({
+          id: TOOLBAR_MENU_ID,
+          label: "Disturbance Check",
+          items: [
+            {
+              id: "open-tool",
+              label: "Open the tool",
+              onSelect: () => {
+                app.openRightPanel?.(PANEL_ID);
+                app.openFloatingPanel?.(PANEL_ID);
+              },
+            },
+            { type: "separator", id: "tool-sep" },
+            ...helpMenuItems(app),
+          ],
+        }),
+      );
+    }
+
+    return true;
   },
 
   deactivate(app) {
     panel?.destroy();
+    help?.destroy();
     panel = null;
+    help = null;
     clearSession();
-    if (unregister) {
-      unregister();
-      unregister = null;
-    } else {
-      app.unregisterRightPanel?.(PANEL_ID);
+
+    while (teardown.length > 0) {
+      const dispose = teardown.pop();
+      try {
+        dispose?.();
+      } catch {
+        // A host that has already torn the surface down is not an error here.
+      }
     }
+    app.unregisterRightPanel?.(PANEL_ID);
+    app.unregisterFloatingPanel?.(HELP_PANEL_ID);
+    app.unregisterToolbarMenu?.(TOOLBAR_MENU_ID);
   },
 
-  handleUrlParameters(_app, params) {
+  handleUrlParameters(app, params) {
     const project = params.get("ee_project_id");
     if (project && project.trim()) {
-      state = {
-        ...state,
-        projectId: project.trim(),
-        projectConfirmed: true,
-      };
+      state = { ...state, projectId: project.trim(), projectConfirmed: true };
       panel?.setState(state);
     }
+    // Lets a guide be linked directly, so a colleague can be sent straight to
+    // the page that answers their question.
+    const guide = params.get("dc_guide");
+    if (guide && guide.trim()) openHelp(app, guide.trim());
   },
 
   getProjectState() {
@@ -105,3 +204,4 @@ export { plugin };
 // Exported for the smoke test. Detecting the plot identifier column wrongly
 // means unlabelled points on every screenshot, so the heuristic is tested.
 export { detectLabelField } from "./vector/import";
+export { GUIDES, findGuide } from "./help/registry";
