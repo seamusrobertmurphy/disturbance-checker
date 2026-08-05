@@ -6,18 +6,22 @@ browser sign people in against it. Neither can be avoided. Earth Engine refuses
 every compute call made without a registered project, and Google will not issue
 a token to an origin it does not recognise.
 
-These steps describe the **Google Auth Platform**, the console section at
-`console.cloud.google.com/auth`. It replaced the older "APIs and Services →
-OAuth consent screen" and "Credentials" pages, and the settings live in
-different places now:
+## Two consoles, same settings
 
-| Google Auth Platform | Formerly | What it holds |
+Google is midway through a console migration and **both** surfaces are live.
+They edit the same underlying data, so use whichever one you land on. Nothing
+below depends on the choice.
+
+| Task | Old: APIs & Services | New: Google Auth Platform |
 |---|---|---|
-| **Branding** | Consent screen, first page | App name, support email, logo |
-| **Audience** | Consent screen, user type | Internal or External, test users, publishing status |
-| **Clients** | Credentials | OAuth client IDs and authorized origins |
-| **Data Access** | Consent screen, scopes | Which scopes the app requests |
-| **Verification Center** | Verification | Review status, only if External and published |
+| Create an OAuth client | **Credentials** → Create credentials | **Clients** → Create client |
+| App name, support email | OAuth consent screen | **Branding** |
+| Internal/External, test users | OAuth consent screen | **Audience** |
+| Scopes | OAuth consent screen → Edit app | **Data Access** |
+
+Old is at `console.cloud.google.com/apis/credentials`, new at
+`console.cloud.google.com/auth`. If a step below names a page you cannot see,
+check the other console rather than assuming the step is wrong.
 
 ## 1. Register the project for Earth Engine
 
@@ -117,16 +121,24 @@ were added, and that should be a deliberate decision at the time.
 
 ## 5. Create the OAuth client
 
-Under **Clients → Create client**, choose application type **Web application**.
+Click **Create credentials → OAuth client ID** (old console) or **Create
+client** (new console), then:
 
-The type matters. If the project already has clients, they are probably
-**Desktop** clients created for the QGIS and geemap workflow. A Desktop client
-cannot authenticate a browser app, and reusing one produces an
-`unauthorized_client` error that gives no hint about the cause. Create a new
-one.
+1. **Application type: Web application.** This is the one setting that cannot be
+   changed later, and getting it wrong is the most likely mistake. If the
+   project already has a client of type **Desktop**, it was created for the
+   Earth Engine notebook or QGIS workflow. Leave it alone, it is still in use
+   there, and it cannot authenticate a browser app. Reusing one produces
+   `unauthorized_client`, an error that says nothing about the cause.
+2. **Name:** anything you will recognise, such as `Disturbance Check web`.
+3. **Authorized JavaScript origins:** add the three below.
+4. **Authorized redirect URIs:** leave completely empty.
+5. **Create**, then copy the Client ID from the dialog.
 
-Under **Authorized JavaScript origins**, add the exact origin the app is served
-from. Origin means scheme and host with no path:
+If the console refuses and asks you to configure the consent screen first, do
+step 3 of this guide and then come back.
+
+Origin means scheme and host with no path:
 
 ```
 https://seamusrobertmurphy.github.io
