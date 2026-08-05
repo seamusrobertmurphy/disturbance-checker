@@ -110,9 +110,16 @@ export const CONTINUOUS_PALETTE = [
 // replaced by the operator with their own project ID.
 export const PLACEHOLDER_EE_PROJECT = "murphys-deforisk";
 
-// Registered in the operator's own Cloud project. Overridden at build time by
-// VITE_GEE_OAUTH_CLIENT_ID, or at runtime by the ?gee_client_id URL parameter.
-export const FALLBACK_OAUTH_CLIENT_ID = "";
+// GeoLibre's own public OAuth client, the same one its built-in Earth Engine
+// panel signs in with (packages/plugins/src/plugins/earth-engine-auth.ts). When
+// this plugin runs inside a GeoLibre deployment, the origin is already on that
+// client's authorized list, so sign-in works with no Cloud console setup at all.
+//
+// Override it with VITE_GEE_OAUTH_CLIENT_ID at build time, or ?gee_client_id at
+// runtime. A self-hosted deployment on your own domain needs its own client,
+// because GeoLibre's does not authorize your origin.
+export const FALLBACK_OAUTH_CLIENT_ID =
+  "141292844612-gitmgm28jkmkujonfkrkvdaqjiqt6qkf.apps.googleusercontent.com";
 
 // Only the Earth Engine scope is requested. The Cloud Storage scope
 // (devstorage.full_control) that the Code Editor also asks for is a *restricted*

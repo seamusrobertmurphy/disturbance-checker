@@ -113,12 +113,17 @@ export function createState(): State {
   };
 }
 
+/**
+ * Whether the project still needs the operator's attention.
+ *
+ * This deliberately turns on explicit confirmation rather than on the value
+ * differing from the placeholder. The prefilled example is a real project id,
+ * so comparing strings would permanently block the person whose project it
+ * actually is. Editing the field or pressing the confirm button sets
+ * projectConfirmed, and so does supplying ?ee_project_id in the URL.
+ */
 export function isPlaceholderProject(state: State): boolean {
-  return (
-    !state.projectConfirmed ||
-    state.projectId.trim() === "" ||
-    state.projectId.trim() === PLACEHOLDER_EE_PROJECT
-  );
+  return !state.projectConfirmed || state.projectId.trim() === "";
 }
 
 export function breaksDeviate(state: State, id: DeltaId): boolean {

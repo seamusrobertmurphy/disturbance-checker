@@ -616,13 +616,27 @@ export class DisturbancePanel {
     );
 
     if (isPlaceholderProject(this.state)) {
-      body.appendChild(
-        this.notice(
-          "warning",
-          "Replace the example project ID",
-          `"${PLACEHOLDER_EE_PROJECT}" is the example from the SOP and is shown only to indicate the expected format. Enter the Cloud project your team has been granted access to before running a check.`,
+      const confirm = el("div", "dc-notice dc-notice-warning");
+      confirm.appendChild(el("div", "dc-notice-title", "Confirm the project"));
+      confirm.appendChild(
+        el(
+          "div",
+          "dc-notice-detail",
+          `"${PLACEHOLDER_EE_PROJECT}" is prefilled as an example. Edit it to your own Cloud project, or confirm it if that is already the one you use.`,
         ),
       );
+      confirm.appendChild(
+        button(
+          `Use ${this.state.projectId || PLACEHOLDER_EE_PROJECT}`,
+          () => {
+            const id = (this.state.projectId || PLACEHOLDER_EE_PROJECT).trim();
+            rememberProjectId(id);
+            this.patch({ projectId: id, projectConfirmed: true });
+          },
+          "primary",
+        ),
+      );
+      body.appendChild(confirm);
     }
 
     const status = el("div", "dc-status-line");
