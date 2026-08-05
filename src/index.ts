@@ -92,9 +92,16 @@ const plugin: GeoLibrePlugin = {
   applyProjectState(_app, raw) {
     state = fromPersisted(state, raw);
     panel?.setState(state);
+    // Uploaded site data is embedded in the project, so redraw it rather than
+    // making the operator load the same files again.
+    panel?.restoreContext();
     return true;
   },
 };
 
 export default plugin;
 export { plugin };
+
+// Exported for the smoke test. Detecting the plot identifier column wrongly
+// means unlabelled points on every screenshot, so the heuristic is tested.
+export { detectLabelField } from "./vector/import";

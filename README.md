@@ -13,6 +13,22 @@ computation and displays the result.
 Outputs complement, but do not replace, ground plots and developer monitoring
 reports.
 
+## The panel
+
+Seven sections, in order:
+
+1. **Earth Engine** — the Cloud project compute bills to.
+2. **Area of interest** — typed bounds, an Earth Engine asset, pasted GeoJSON,
+   or an uploaded project boundary.
+3. **Reporting periods** — pre and post windows, one or many, plus the cloud
+   ceiling.
+4. **Severity thresholds** — the Low, Moderate and High cut points for each of
+   the three differenced indices, editable before the first run.
+5. **Site data** — project boundary, streamside management zones, and plot
+   points, uploaded as zipped shapefile, GeoJSON or KML.
+6. **Results** — scene counts, histograms with draggable breaks, class areas.
+7. **Findings** — the run manifest.
+
 ## How it works
 
 The operator sets an area of interest and one or more reporting periods. The
@@ -33,6 +49,35 @@ panel then, per period:
 
 Nothing about the analysis is hidden in the tool. Every constant traces to a
 section of the SOP in [`src/defaults.ts`](src/defaults.ts).
+
+## Severity classes
+
+Each differenced index is cut into four classes: undisturbed, Low, Moderate and
+High. Undisturbed pixels are masked server-side, so the classified rasters
+arrive with transparency already in them and only disturbed cells are drawn over
+the site.
+
+The thresholds ship as the SOP Step 6 defaults and are editable in the opening
+panel, before the first run, so a colleague can set them for their own site
+without waiting for a result. After a run they can also be dragged directly on
+each histogram, against the distribution they are cutting. Either way, a value
+moved off its default marks that index as adjusted and requires a written
+justification, which is recorded in the run manifest. Ordering is enforced, so
+Low can never cross Moderate.
+
+## Site data
+
+Project boundary, streamside management zones and plot points load from a zipped
+shapefile, a GeoJSON file, or a KML. Files are parsed in the browser and are
+never uploaded anywhere.
+
+Plot points are labelled on the map with their identifier, so a screenshot of a
+disturbance polygon can be tied to a plot without a separate legend. The
+identifier column is detected automatically, preferring plot-specific names like
+`Plot ID` or `PLOT_NO` over generic ones like `OBJECTID`, and the detected field
+is always shown and always overridable. Loading a project boundary also sets it
+as the area of interest, rather than making the operator supply the same extent
+twice.
 
 ## What the panel checks for you
 

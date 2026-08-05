@@ -133,6 +133,75 @@
   gap: 8px;
 }
 
+.dc-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+/* Thresholds and site data ------------------------------------------------ */
+
+.dc-threshold,
+.dc-context {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid var(--dc-border);
+  border-radius: 5px;
+}
+
+.dc-threshold-head,
+.dc-context-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dc-threshold-head .dc-button {
+  margin-left: auto;
+  padding: 2px 7px;
+  font-size: 10.5px;
+}
+
+.dc-context-label {
+  font-weight: 600;
+  font-size: 11.5px;
+}
+
+.dc-context-meta {
+  color: var(--dc-fg-muted);
+  font-size: 10.5px;
+}
+
+.dc-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 6px 8px;
+  background: var(--dc-surface);
+  border-radius: 4px;
+  font-size: 10.5px;
+}
+
+.dc-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dc-legend-chip {
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--dc-border);
+  border-radius: 2px;
+  flex: none;
+}
+
+select.dc-input {
+  appearance: auto;
+}
+
 /* Controls ---------------------------------------------------------------- */
 
 .dc-field {

@@ -111,6 +111,51 @@ const restored = plugin.applyProjectState(
 assert.equal(restored, true, "applyProjectState should report success");
 assert.equal(plugin.getProjectState().maxCloud, 20, "state did not round-trip");
 
+// Severity thresholds are operator-tunable, so they must survive a round trip.
+const tuned = plugin.getProjectState();
+tuned.breaks.dNDVI = { low: 0.18, moderate: 0.28, high: 0.5 };
+plugin.applyProjectState({}, tuned);
+assert.deepEqual(
+  plugin.getProjectState().breaks.dNDVI,
+  { low: 0.18, moderate: 0.28, high: 0.5 },
+  "adjusted severity thresholds did not round-trip",
+);
+
+// Uploaded site data must persist, or a reopened project loses its orientation.
+const withContext = plugin.getProjectState();
+assert.deepEqual(
+  Object.keys(withContext.context).sort(),
+  ["boundary", "plots", "smz"],
+  "project state must carry all three site data slots",
+);
+withContext.context.plots = {
+  name: "plots.zip",
+  featureCount: 2,
+  fields: ["Plot ID", "Species"],
+  labelField: "Plot ID",
+  geometryKinds: ["Point"],
+  bounds: [-123, 48, -122, 49],
+  geojson: { type: "FeatureCollection", features: [] },
+};
+plugin.applyProjectState({}, withContext);
+assert.equal(
+  plugin.getProjectState().context.plots?.labelField,
+  "Plot ID",
+  "plot label field did not round-trip",
+);
+
+// The plot identifier heuristic decides whether screenshots carry plot numbers.
+assert.equal(module.detectLabelField(["Plot ID", "Species"]), "Plot ID");
+assert.equal(module.detectLabelField(["PLOT_NO", "AREA"]), "PLOT_NO");
+assert.equal(module.detectLabelField(["plot"]), "plot");
+assert.equal(module.detectLabelField(["OBJECTID", "SHAPE"]), "OBJECTID");
+assert.equal(
+  module.detectLabelField(["StandID", "PlotNumber"]),
+  "PlotNumber",
+  "a plot-specific field must outrank a generic identifier",
+);
+assert.equal(module.detectLabelField(["geometry", "area_ha"]), null);
+
 // A host with no panel surface must fail activation rather than activate blind.
 assert.equal(
   plugin.activate({}),

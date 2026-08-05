@@ -18,6 +18,20 @@ export type RunStatus =
   | "stale"
   | "error";
 
+export type ContextRole = "boundary" | "smz" | "plots";
+
+export interface ContextLayer {
+  /** Original file name, so the operator can see what they loaded. */
+  name: string;
+  featureCount: number;
+  fields: string[];
+  /** Field whose value is drawn next to each point. Only used for plots. */
+  labelField: string | null;
+  geometryKinds: string[];
+  bounds: [number, number, number, number] | null;
+  geojson: unknown;
+}
+
 export interface State {
   projectId: string;
   /** The placeholder must be replaced before any Earth Engine call is made. */
@@ -28,6 +42,8 @@ export interface State {
   aoiLabel: string;
   periods: Period[];
   maxCloud: number;
+
+  context: Record<ContextRole, ContextLayer | null>;
 
   breaks: Record<DeltaId, Breaks>;
   justifications: Record<DeltaId, string>;
@@ -78,6 +94,8 @@ export function createState(): State {
     periods: [defaultPeriod("RP1", thisYear - 2, thisYear - 1)],
     maxCloud: DEFAULT_MAX_CLOUD,
 
+    context: { boundary: null, smz: null, plots: null },
+
     breaks: defaultBreaks(),
     justifications: { dNDVI: "", dNDMI: "", dNBR: "" },
 
@@ -123,6 +141,30 @@ export interface PersistedState {
   maxCloud: number;
   breaks: Record<DeltaId, Breaks>;
   justifications: Record<DeltaId, string>;
+  context: Record<ContextRole, ContextLayer | null>;
+}
+
+/**
+ * Uploaded geometry is embedded so a saved project reopens complete, but a
+ * large boundary would bloat the project file past what is reasonable to keep
+ * in a JSON document. Past the cap the metadata is kept and the geometry is
+ * dropped, so the operator is told to re-add the file rather than silently
+ * losing the layer.
+ */
+const MAX_EMBEDDED_GEOMETRY_BYTES = 2_000_000;
+
+function persistContext(layer: ContextLayer | null): ContextLayer | null {
+  if (!layer) return null;
+  let size = 0;
+  try {
+    size = JSON.stringify(layer.geojson).length;
+  } catch {
+    size = Number.POSITIVE_INFINITY;
+  }
+  if (size > MAX_EMBEDDED_GEOMETRY_BYTES) {
+    return { ...layer, geojson: null };
+  }
+  return layer;
 }
 
 export function toPersisted(state: State): PersistedState {
@@ -135,6 +177,11 @@ export function toPersisted(state: State): PersistedState {
     maxCloud: state.maxCloud,
     breaks: state.breaks,
     justifications: state.justifications,
+    context: {
+      boundary: persistContext(state.context.boundary),
+      smz: persistContext(state.context.smz),
+      plots: persistContext(state.context.plots),
+    },
   };
 }
 
@@ -159,6 +206,11 @@ export function fromPersisted(state: State, raw: unknown): State {
       typeof persisted.maxCloud === "number" ? persisted.maxCloud : state.maxCloud,
     breaks: persisted.breaks ?? state.breaks,
     justifications: persisted.justifications ?? state.justifications,
+    context: {
+      boundary: persisted.context?.boundary ?? null,
+      smz: persisted.context?.smz ?? null,
+      plots: persisted.context?.plots ?? null,
+    },
     status: "idle",
     results: [],
     analyses: {},

@@ -45,6 +45,46 @@ export interface GeoLibreTileLayerOptions {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * Label configuration, mirroring LabelStyle in @geolibre/core. Only the members
+ * this plugin sets are declared.
+ */
+export interface GeoLibreLabelStyle {
+  enabled: boolean;
+  field: string;
+  size: number;
+  color: string;
+  haloColor: string;
+  haloWidth: number;
+  allowOverlap: boolean;
+  anchor: string;
+  offsetY: number;
+}
+
+/**
+ * Registers MapLibre layers the plugin drew itself into GeoLibre's Layer panel,
+ * so they gain visibility, opacity, ordering and removal like any other layer.
+ *
+ * This is the only removal path available to a plugin: GeoLibreAppAPI exposes no
+ * removeLayer, so anything added through addGeoJsonLayer or addTileLayer cannot
+ * be taken away again. Every layer this plugin creates therefore goes through
+ * the external-native route.
+ */
+export interface GeoLibreExternalNativeLayerRegistration {
+  id: string;
+  name: string;
+  type?: string;
+  source?: Record<string, unknown>;
+  geojson?: unknown;
+  nativeLayerIds: string[];
+  sourceIds?: string[];
+  sourceId?: string;
+  beforeId?: string;
+  opacity?: number;
+  style?: Record<string, unknown> & { labels?: Partial<GeoLibreLabelStyle> };
+  metadata?: Record<string, unknown>;
+}
+
 export interface GeoLibreAppAPI {
   addGeoJsonLayer: (
     name: string,
@@ -56,10 +96,12 @@ export interface GeoLibreAppAPI {
     url: string,
     options?: GeoLibreTileLayerOptions,
   ) => string;
-  removeLayer?: (id: string) => void;
-  updateLayer?: (id: string, patch: Record<string, unknown>) => void;
-  setLayerVisibility?: (id: string, visible: boolean) => void;
   getMap?: () => unknown;
+  fitBounds?: (bounds: [number, number, number, number]) => void;
+  registerExternalNativeLayer?: (
+    layer: GeoLibreExternalNativeLayerRegistration,
+  ) => void;
+  unregisterExternalNativeLayer?: (id: string) => void;
   registerRightPanel?: (
     panel: GeoLibreRightPanelRegistration,
   ) => () => void;
