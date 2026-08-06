@@ -262,37 +262,61 @@ export async function initialise(projectId: string): Promise<EarthEngineApi> {
 
   ee.data?.setProject?.(project);
 
-  await new Promise<void>((resolve, reject) => {
-    let settled = false;
-    const finish = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timer);
-      fn();
-    };
+  // The client installs its generated classes (ee.Reducer, ee.Kernel,
+  // ee.Classifier and the rest) onto `goog.global.ee`, which is `window.ee`:
+  //
+  //   var exportedEE = goog.global.ee;
+  //   exportedEE[name] = ee.makeClass_(name);
+  //
+  // but the module hands us a different reference via `module.exports = ee`.
+  // GeoLibre's host app bundles its own copy of the client and owns window.ee,
+  // so initialising from this plugin installed Reducer on the host's object
+  // while this code read from its own, and every reduction failed with
+  // "undefined is not an object (evaluating 'ee.Reducer.sum')".
+  //
+  // Point window.ee at our instance for the duration of initialise so the
+  // generated classes land where we read them, then put back whatever was there
+  // so the host's own Earth Engine panel is unaffected.
+  const globals = globalThis as Record<string, unknown>;
+  const previousGlobalEe = globals.ee;
+  globals.ee = ee;
 
-    // The Cloud project is the sixth argument. A client version that orders
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        fn();
+      };
+
+      // The Cloud project is the sixth argument. A client version that orders
     // these differently, or a project the account cannot reach, leaves both
     // callbacks unfired rather than raising.
-    const timer = window.setTimeout(() => {
-      finish(() =>
-        reject(
-          new Error(
-            `Earth Engine did not finish initialising against project "${project}". Check the project id, that the Earth Engine API is enabled on it, and that your account has access.`,
+      const timer = window.setTimeout(() => {
+        finish(() =>
+          reject(
+            new Error(
+              `Earth Engine did not finish initialising against project "${project}". Check the project id, that the Earth Engine API is enabled on it, and that your account has access.`,
+            ),
           ),
-        ),
-      );
-    }, 60_000);
+        );
+      }, 60_000);
 
-    ee.initialize(
-      null,
-      null,
-      () => finish(() => resolve()),
-      (error: unknown) => finish(() => reject(new Error(describeError(error)))),
-      null,
-      project,
-    );
-  });
+      ee.initialize(
+        null,
+        null,
+        () => finish(() => resolve()),
+        (error: unknown) => finish(() => reject(new Error(describeError(error)))),
+        null,
+        project,
+      );
+    });
+  } finally {
+    if (previousGlobalEe === undefined) delete globals.ee;
+    else globals.ee = previousGlobalEe;
+  }
 
   assertGeneratedClasses(ee, project);
   initialisedProject = project;

@@ -147,14 +147,27 @@ returns an empty array, and `analyseHistogram` reports the empty shape.
 wide areas. The histogram runs at scale 20 with `maxPixels` 1e10. Shrink the
 AOI, or add `bestEffort: true` in `computeHistogram`.
 
-**`undefined is not an object (evaluating 'ee.Reducer.sum')`.** Earth Engine
-returned no algorithm list. Classes such as `ee.Reducer` do not exist in the
-client bundle at all; they are generated at initialise time from the list the
-server sends. An empty list does not raise, so initialisation reports success
-and the failure surfaces on first use, pointing nowhere near the cause. It
-almost always means the Cloud project is not registered for Earth Engine, or
-the Earth Engine API is not enabled on it. The tool now checks for this
-straight after initialise and names the project in the error.
+**`undefined is not an object (evaluating 'ee.Reducer.sum')`.** Two copies of
+the Earth Engine client in one page, fighting over a global.
+
+Classes such as `ee.Reducer` do not exist in the client bundle at all; grep it
+for "Reducer" and there are no matches. They are built at initialise time by
+`initializeGeneratedClasses_()`, which installs them like this:
+
+```js
+var exportedEE = goog.global.ee;          // window.ee
+exportedEE[name] = ee.makeClass_(name);
+```
+
+The generated classes go onto `window.ee`, but the module hands callers a
+different reference through `module.exports = ee`. GeoLibre's host app bundles
+its own copy of the client and owns `window.ee`, so a plugin that initialises
+its own copy installs `Reducer` on the *host's* object and then reads from its
+own, where it is still undefined.
+
+`initialise()` now points `window.ee` at its own instance for the duration of
+the call and restores the previous value afterwards, so the generated classes
+land where they are read and the host's Earth Engine panel is untouched.
 
 **Class areas all zero.** The grouped reducer assumes band 0 is area and band 1
 is class, from `ee.Image.pixelArea().divide(10000).addBands(classified)`. If the
