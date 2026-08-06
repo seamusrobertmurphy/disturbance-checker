@@ -1,0 +1,537 @@
+# --------------------------------------------------
+#  TÜV SÜD | Green Energy & Sustainability Division
+#  Canopy Disturbance Check: S2 Change Detection
+# --------------------------------------------------
+
+
+
+#  Output
+
+#  dNDVI  — Canopy loss         (harvest, blowdown, deforestation)
+#  dNDMI  — Moisture stress     (pest, drought, beetle damage)
+#  dNBR   — Burn severity       (wildfire, prescribed burn)
+
+#  Spectral Equations
+
+#  NDVI  = (B8  - B4)  / (B8  + B4)    NIR vs Red          vegetation vigour
+#  NDMI  = (B8  - B11) / (B8  + B11)   NIR vs SWIR1        canopy moisture
+#  NBR   = (B8A - B12) / (B8A + B12)   nrNIR vs SWIR2      fire / char signal
+#
+
+#  Change Trends
+
+#  dNDVI = pre - post   positive = canopy loss
+#  dNDMI = pre - post   positive = moisture loss / stress
+#  dNBR  = post - pre   positive = burned area (MTBS convention)
+
+#  Temporal Windows
+
+#  Technical Note: Oct-Dec composites capture dormant/senescent canopy which inflates dNDMI.
+#  Preferred windows for moisture stress detection: July-August (peak growing season).
+#  Adjust RP_Start / RP_End below before running. This is the trade off we must weigh up
+
+
+# ------------------------------------------------
+# Steps I: Environment Setup
+# ------------------------------------------------
+
+# 1. Plugins >> Manage and Install Plugins >> search "GEE" / "Google Earth Engine"
+# 2. Install: GEE Data Catalogs, Geemap (essential), plus any additional GEE plugins
+# 3. Activate all GEE plugins, close Plugin Manager, return to map canvas
+
+# ------------------------------------------------
+# Step II: Launch Earth Engine
+# ------------------------------------------------
+
+# Paste these lines into the Geemap "Code" panel and click Run.
+# Re-run ee.Authenticate(force=True) if you see network timeout banners.
+
+import ee
+import geemap
+import numpy as np
+import matplotlib.pyplot as plt
+from pathlib import Path
+
+# Absolute, user-writable output folder (cwd inside the QGIS/Geemap code
+# panel is unreliable -- on Windows it can be the drive root, which is not
+# writable and raises [Errno 13] Permission denied).
+OUT_DIR = Path.home() / "Claybelt_DisturbanceCheck"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+ee.Authenticate()
+ee.Initialize(project="murphys-deforisk")
+
+# ------------------------------------------------
+# Step IV: Spatial & Temporal Filters
+# ------------------------------------------------
+
+# --- Spatial filter: Project area WGS84 bounding box ---
+# Corners (lat, lon):
+#   NW  49.06824,-81.79362
+#   SW  48.68688,-81.74027
+#   SE  48.67742,-81.19107
+#   NE  49.08762,-81.19634
+roi = ee.Geometry.Rectangle([-81.79362, 48.68688, -81.19107, 49.08762])
+m.set_center(-81.46152, 48.88691,7)
+
+# --- Temporal filter ---
+# RECOMMENDED: switch to July-Aug for growing-season moisture stress detection.
+# RP_START and RP_END windows allow normalization sampling.
+# Keep an eye out for dormant-season senescence that inflates dNDMI extent (i.e. some RP dates fall in dead of winter)
+RP_START_BEGIN = "2023-08-01"
+RP_START_END   = "2023-09-01"
+RP_END_BEGIN   = "2025-08-01"
+RP_END_END     = "2025-09-01"
+
+# --- Cloud filter ---
+MAX_CLOUD = 10   # % cloudy pixels per scene; 30 is tighter than original 40
+
+# ------------------------------------------------
+# Cloud Score+ setup (better cloud removal)
+# ------------------------------------------------
+cs_plus = ee.ImageCollection('GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED')
+QA_BAND = 'cs'
+CLEAR_THRESHOLD = 0.40  # adjust (0.50–0.65 stricter, fewer pixels)
+
+#Replace with this Cloud Score+ version:
+
+def build_composite(start, end, roi_geom):
+    """Build cloud-optimized composite using Cloud Score+ instead of QA60."""
+    s2 = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+           .filterDate(start, end)
+           .filterBounds(roi_geom))
+
+    # Link Cloud Score+ collection
+    s2_linked = s2.linkCollection(cs_plus, [QA_BAND])
+
+    # Mask clouds using Cloud Score+
+    masked = s2_linked.map(lambda img: img.updateMask(img.select(QA_BAND).gte(CLEAR_THRESHOLD)))
+
+    # Use quality mosaic (best pixels instead of median)
+    composite = (masked
+                 .qualityMosaic(QA_BAND)
+                 .divide(10000)   # keep reflectance scaling
+                 .clip(roi_geom))
+
+    return composite
+
+
+
+# Step IV: Median-Normalized Composites
+# ---------------------------------
+
+def mask_s2_clouds(image):
+    """Remove cloud and cirrus pixels using Sentinel-2 QA60 bitmask band.
+    Scales reflectance from DN (0-10000) to surface reflectance (0.0-1.0)."""
+    qa              = image.select("QA60")
+    cloud_bit_mask  = 1 << 10
+    cirrus_bit_mask = 1 << 11
+    mask = (qa.bitwiseAnd(cloud_bit_mask).eq(0)
+              .And(qa.bitwiseAnd(cirrus_bit_mask).eq(0)))
+    return (image.updateMask(mask)
+                 .divide(10000)
+                 .copyProperties(image, ["system:time_start"]))
+
+
+# def build_composite(start, end, roi_geom):
+#     """Filter S2 SR collection by date, bounds, and cloud cover,
+#     apply cloud mask, and return a median composite clipped to ROI."""
+#     return (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+#               .filterDate(start, end)
+#               .filterBounds(roi_geom)
+#               .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", MAX_CLOUD))
+#               .map(mask_s2_clouds)
+#               .median()
+#               .clip(roi_geom))
+
+
+pre_composite  = build_composite(RP_START_BEGIN, RP_START_END, roi)
+post_composite = build_composite(RP_END_BEGIN,   RP_END_END,   roi)
+
+
+# Step V: Water Masking
+# -----------------------
+
+# Mask pixels with >= 50% water occurrence frequency to exclude lakes, rivers,
+# and wetlands from disturbance analysis. These pixels produce spurious spectral
+# change signals unrelated to forest condition.
+
+water_mask = (ee.Image("JRC/GSW1_4/GlobalSurfaceWater")
+                .select("occurrence")
+                .lt(50)
+                .unmask(1))
+
+# ------------------------------------------------
+# Step VI: Spectral Indices
+# ------------------------------------------------
+
+def compute_ndvi(image):
+    """NDVI = (B8 - B4) / (B8 + B4)  |  NIR vs Red  |  vegetation vigour"""
+    return image.normalizedDifference(["B8", "B4"]).rename("NDVI")
+
+
+def compute_ndmi(image):
+    """NDMI = (B8 - B11) / (B8 + B11)  |  NIR vs SWIR1  |  canopy moisture"""
+    return image.normalizedDifference(["B8", "B11"]).rename("NDMI")
+
+
+def compute_nbr(image):
+    """NBR = (B8A - B12) / (B8A + B12)  |  narNIR vs SWIR2  |  fire/char signal"""
+    return image.normalizedDifference(["B8A", "B12"]).rename("NBR")
+
+
+# --- Single-date index images ---
+pre_ndvi  = compute_ndvi(pre_composite)
+post_ndvi = compute_ndvi(post_composite)
+pre_ndmi  = compute_ndmi(pre_composite)
+post_ndmi = compute_ndmi(post_composite)
+pre_nbr   = compute_nbr(pre_composite)
+post_nbr  = compute_nbr(post_composite)
+
+# --- Multi-date difference images ---
+# dNDVI = pre - post  (positive = canopy loss)
+# dNDMI = pre - post  (positive = moisture stress / loss)
+# dNBR  = post - pre  (positive = burned; MTBS convention)
+
+delta_ndvi = (pre_ndvi.subtract(post_ndvi)
+                       .rename("dNDVI")
+                       .updateMask(water_mask))
+
+delta_ndmi = (pre_ndmi.subtract(post_ndmi)
+                       .rename("dNDMI")
+                       .updateMask(water_mask))
+
+delta_nbr  = (post_nbr.subtract(pre_nbr)
+                       .rename("dNBR")
+                       .updateMask(water_mask))
+
+# ------------------------------------------------
+# STep VII: Raster Histograms
+# ------------------------------------------------
+
+# Inspect the spectral distribution BEFORE committing to thresholds.
+# A unimodal distribution centred near 0 = mostly noise / phenology.
+# A bimodal distribution = genuine disturbance signal present.
+# Adjust classify_delta_ndmi() thresholds below to match actual distribution.
+
+histogram = delta_ndmi.reduceRegion(
+    reducer  = ee.Reducer.fixedHistogram(-0.5, 0.8, 130),
+    geometry = roi,
+    scale    = 20,
+    maxPixels= 1e9
+)
+
+result = histogram.getInfo()
+hist_data   = np.array(result["dNDMI"])
+bin_centers = hist_data[:, 0]
+counts      = hist_data[:, 1]
+
+plt.figure(figsize=(11, 4))
+plt.bar(bin_centers, counts, width=0.01, color="steelblue", edgecolor="none", alpha=0.8)
+plt.axvline(0.15, color="orange",  lw=1.2, linestyle="--", label="Low threshold")
+plt.axvline(0.30, color="red",     lw=1.2, linestyle="--", label="Mod threshold")
+plt.axvline(0.45, color="darkred", lw=1.2, linestyle="--", label="High threshold")
+plt.xlabel("dNDMI value")
+plt.ylabel("Pixel count")
+plt.title("dNDMI pixel distribution")
+plt.legend()
+plt.tight_layout()
+plt.savefig(OUT_DIR / "dNDMI_histogram_B.png", dpi=150)
+plt.show()
+
+
+histogram = delta_ndvi.reduceRegion(
+    reducer  = ee.Reducer.fixedHistogram(-0.5, 0.8, 130),
+    geometry = roi,
+    scale    = 20,
+    maxPixels= 1e9
+)
+
+result = histogram.getInfo()
+hist_data   = np.array(result["dNDVI"])
+bin_centers = hist_data[:, 0]
+counts      = hist_data[:, 1]
+
+plt.figure(figsize=(11, 4))
+plt.bar(bin_centers, counts, width=0.01, color="steelblue", edgecolor="none", alpha=0.8)
+plt.axvline(0.10, color="orange",  lw=1.2, linestyle="--", label="Low threshold")
+plt.axvline(0.20, color="red",     lw=1.2, linestyle="--", label="Mod threshold")
+plt.axvline(0.35, color="darkred", lw=1.2, linestyle="--", label="High threshold")
+plt.xlabel("dNDVI value")
+plt.ylabel("Pixel count")
+plt.title("dNDVI pixel distribution")
+plt.legend()
+plt.tight_layout()
+plt.savefig(OUT_DIR / "dNDVI_histogram_B.png", dpi=150)
+plt.show()
+
+# ------------------------------------------
+
+histogram = delta_nbr.reduceRegion(
+    reducer  = ee.Reducer.fixedHistogram(-0.5, 0.8, 130),
+    geometry = roi,
+    scale    = 20,
+    maxPixels= 1e9
+)
+
+result = histogram.getInfo()
+hist_data   = np.array(result["dNBR"])
+bin_centers = hist_data[:, 0]
+counts      = hist_data[:, 1]
+
+plt.figure(figsize=(11, 4))
+plt.bar(bin_centers, counts, width=0.01, color="steelblue", edgecolor="none", alpha=0.8)
+plt.axvline(0.10, color="orange",  lw=1.2, linestyle="--", label="Low threshold")
+plt.axvline(0.27, color="red",     lw=1.2, linestyle="--", label="Mod threshold")
+plt.axvline(0.44, color="darkred", lw=1.2, linestyle="--", label="High threshold")
+plt.xlabel("dNBR value")
+plt.ylabel("Pixel count")
+plt.title("dNBR pixel distribution")
+plt.legend()
+plt.tight_layout()
+plt.savefig(OUT_DIR / "dNBR_histogram_B.png", dpi=150)
+plt.show()
+
+# ------------------------------------------
+
+
+# ------------------------------------------------
+# Step VIII: Severity Classes
+# ------------------------------------------------
+
+# dNDVI canopy loss — harvest/deforestation detection (SOP Step 4A)
+
+def classify_delta_ndvi(delta):
+    return (delta
+            .where(delta.lt(0.10), 0)
+            .where(delta.gte(0.10).And(delta.lt(0.20)), 1)
+            .where(delta.gte(0.20).And(delta.lt(0.35)), 2)
+            .where(delta.gte(0.35), 3)
+            .rename("dNDVI_class").toInt16())
+
+# dNDMI moisture stress — pest/beetle/drought detection (SOP Step 3C)
+
+# dNDMI moisture stress — pest/beetle/drought detection (SOP Step 3C)
+
+def classify_delta_ndmi(delta):
+    return (delta
+            .where(delta.lt(0.15), 0)
+            .where(delta.gte(0.15).And(delta.lt(0.30)), 1)
+            .where(delta.gte(0.30).And(delta.lt(0.45)), 2)
+            .where(delta.gte(0.45), 3)
+            .rename("dNDMI_class").toInt16())
+
+# dNBR burn severity — MTBS/USFS PNW thresholds (post minus pre)
+
+def classify_ndbr(delta):
+    return (delta
+            .where(delta.lt(0.10), 0)
+            .where(delta.gte(0.10).And(delta.lt(0.27)), 1)
+            .where(delta.gte(0.27).And(delta.lt(0.44)), 2)
+            .where(delta.gte(0.44), 3)
+            .rename("NDBR_class").toInt16())
+
+
+
+# --- Apply classifiers ---
+delta_ndvi_class = classify_delta_ndvi(delta_ndvi)
+delta_ndmi_class = classify_delta_ndmi(delta_ndmi)
+delta_nbr_class  = classify_ndbr(delta_nbr)
+
+# --- Mask class 0 (undisturbed pixels → transparent on map) ---
+delta_ndvi_disturbed = delta_ndvi_class.updateMask(delta_ndvi_class.gt(0))
+delta_ndmi_disturbed = delta_ndmi_class.updateMask(delta_ndmi_class.gt(0))
+delta_nbr_disturbed  = delta_nbr_class.updateMask(delta_nbr_class.gt(0))
+
+# ------------------------------------------------
+# Step IX: Visualiztion
+# ------------------------------------------------
+
+vis_rgb    = {"bands": ["B4", "B3", "B2"], "min": 0.02, "max": 0.25, "gamma": 1.2}
+vis_ndvi   = {"min": -0.2, "max": 0.8, "palette": ["#d73027","#fc8d59","#fee08b","#d9ef8b","#1a9850"]}
+vis_ndmi   = {"min": -0.5, "max": 0.5, "palette": ["#d73027","#fc8d59","#ffffbf","#91bfdb","#4575b4"]}
+vis_delta  = {"min": -0.3, "max": 0.5, "palette": ["#1a9850","#ffffbf","#fc8d59","#d73027"]}
+vis_dndvi  = {"min": 1, "max": 3, "palette": ["#FFEDA0","#FC4E2A","#800026"]}
+vis_dndmi  = {"min": 1, "max": 3, "palette": ["#FEB24C","#FD8D3C","#B10026"]}
+vis_dnbr   = {"min": 1, "max": 3, "palette": ["#FFEDA0","#FC4E2A","#800026"]}
+
+# --- Base RGB composites ---
+m.addLayer(pre_composite,  vis_rgb, "Pre RGB",  shown=True)
+m.addLayer(post_composite, vis_rgb, "Post RGB", shown=True)
+
+# --- Single-date index images ---
+m.addLayer(pre_ndvi,  vis_ndvi, "Pre NDVI",  shown=False)
+m.addLayer(post_ndvi, vis_ndvi, "Post NDVI", shown=False)
+m.addLayer(pre_ndmi,  vis_ndmi, "Pre NDMI",  shown=False)
+m.addLayer(post_ndmi, vis_ndmi, "Post NDMI", shown=False)
+
+# --- Continuous delta images (for threshold exploration) ---
+m.addLayer(delta_ndvi, vis_delta, "dNDVI continuous", shown=False)
+m.addLayer(delta_ndmi, vis_delta, "dNDMI continuous", shown=False)
+m.addLayer(delta_nbr,  vis_delta, "dNBR  continuous", shown=False)
+
+# --- Classified disturbance layers ---
+m.addLayer(delta_ndvi_disturbed, vis_dndvi, "dNDVI - Canopy Loss     [Low/Mod/High]", shown=True)
+m.addLayer(delta_ndmi_disturbed, vis_dndmi, "dNDMI - Moisture Stress [Low/Mod/High]", shown=True)
+m.addLayer(delta_nbr_disturbed,  vis_dnbr,  "dNBR  - Burn Severity   [Low/Mod/High]", shown=True)
+
+# --- ROI boundary ---
+m.addLayer(ee.FeatureCollection([ee.Feature(roi)]),
+    {"color": "cyan", "fillColor": "00000000"},
+    "ROI")
+m
+
+
+# ------------------------------------------------
+# Step X: Export Data (set EXPORT = True to run)
+# ------------------------------------------------
+
+# Exports classified and RGB layers as 10m GeoTIFFs to your Google Drive folder.
+# Leave EXPORT = False during routine map inspection to save quota and time.
+# Re-running this script on QGIS startup re-renders all layers without local storage.
+
+EXPORT = False
+
+if EXPORT:
+    export_layers = {
+        "dNDVI_canopy_loss_classified":     delta_ndvi_disturbed,
+        "dNDMI_moisture_stress_classified": delta_ndmi_disturbed,
+        "dNBR_burn_severity_classified":    delta_nbr_disturbed,
+        "pre_RGB":                          pre_composite,
+        "post_RGB":                         post_composite,
+    }
+    for name, layer in export_layers.items():
+        task = ee.batch.Export.image.toDrive(
+            image          = layer,
+            description    = name,
+            folder         = "GEE_Exports",
+            fileNamePrefix = name,
+            scale          = 10,
+            region         = roi,
+            crs            = "EPSG:4326",
+            maxPixels      = 1e13,
+            fileFormat     = "GeoTIFF"
+        )
+        task.start()
+        print(f"Export started: {name}")
+
+
+# --------------------------------------------------
+# Method Notes:
+# --------------------------------------------------
+
+# Patchy Composites
+# If median composites show missing tiles or patchwork artefacts, widen the
+# temporal window (filterDate) or relax MAX_CLOUD. The median normaliser
+# requires a minimum pixel sample per cell — thin collections produce gaps.
+# Note: most cloud/shadow gap-fill algorithms sample forward in time (earlier
+# to later dates). Some sample backwards. This affects which season's spectral
+# signal dominates filled pixels — a key concern for seasonally variable
+# forested landscapes like the project area.
+
+# Threshold Recalibration
+# Always run the histogram block (Step VIII) before committing to thresholds.
+# A good disturbance signal produces a bimodal histogram with a clear gap
+# between the noise bulk (near 0) and the disturbance tail (> 0.15).
+# If the histogram is unimodal, consider widening the temporal window or
+# switching to growing-season composites (July-August).
+
+# Band Naming
+#  All delta image band names follow the d-prefix convention:
+#   dNDVI → dNDVI_class
+#   dNDMI → dNDMI_class
+#   dNBR  → dNBR_class
+# Use these exact strings when referencing result dict keys (e.g. result["dNDMI"]).
+
+
+# ========================================================================
+# Step XI: Multi-Period Reporting Stack (i.e. RP1–RP6, OR Multi-vintage RP)
+# ========================================================================
+#
+# Builds disturbance layers for six consecutive annual reporting periods
+# using the same compositing windows, classifiers, and thresholds defined
+# above. Each RP uses Aug–Sep pre and Aug–Sep post composites to maintain
+# growing-season consistency across years.
+#
+# RP1 duplicates the single-period analysis above; it is re-derived here
+# so all six periods live in a single dict for batch export.
+
+RP_DATES = {
+    "RP1-Vintage-2024": {"pre_start": "2023-08-01", "pre_end": "2023-09-01",
+            "post_start": "2024-08-01", "post_end": "2024-09-01"},
+    "RP1-Vintage-2025": {"pre_start": "2024-08-01", "pre_end": "2024-09-01",
+            "post_start": "2025-08-01", "post_end": "2025-09-01"},
+}
+
+
+rp_results = {}
+
+for rp_name, dates in RP_DATES.items():
+
+    # --- Composites ---
+    rp_pre  = build_composite(dates["pre_start"],  dates["pre_end"],  roi)
+    rp_post = build_composite(dates["post_start"], dates["post_end"], roi)
+
+    # --- Spectral indices ---
+    rp_pre_ndvi  = compute_ndvi(rp_pre)
+    rp_post_ndvi = compute_ndvi(rp_post)
+    rp_pre_ndmi  = compute_ndmi(rp_pre)
+    rp_post_ndmi = compute_ndmi(rp_post)
+    rp_pre_nbr   = compute_nbr(rp_pre)
+    rp_post_nbr  = compute_nbr(rp_post)
+
+    # --- Delta images (water-masked) ---
+    rp_dndvi = (rp_pre_ndvi.subtract(rp_post_ndvi).rename("dNDVI").updateMask(water_mask))
+    rp_dndmi = (rp_pre_ndmi.subtract(rp_post_ndmi).rename("dNDMI").updateMask(water_mask))
+    rp_dnbr  = (rp_post_nbr.subtract(rp_pre_nbr).rename("dNBR").updateMask(water_mask))
+
+    # --- Classify and mask undisturbed ---
+    rp_dndvi_cls = classify_delta_ndvi(rp_dndvi)
+    rp_dndmi_cls = classify_delta_ndmi(rp_dndmi)
+    rp_dnbr_cls  = classify_ndbr(rp_dnbr)
+
+    rp_dndvi_dist = rp_dndvi_cls.updateMask(rp_dndvi_cls.gt(0))
+    rp_dndmi_dist = rp_dndmi_cls.updateMask(rp_dndmi_cls.gt(0))
+    rp_dnbr_dist  = rp_dnbr_cls.updateMask(rp_dnbr_cls.gt(0))
+
+    # --- Store for export ---
+    rp_results[rp_name] = {
+        "pre_RGB":  rp_pre,
+        "post_RGB": rp_post,
+        "dNDVI":    rp_dndvi_dist,
+        "dNDMI":    rp_dndmi_dist,
+        "dNBR":     rp_dnbr_dist,
+    }
+
+    # --- Add classified layers to map ---
+    show = (rp_name != "RP1")  # RP1 already rendered above
+    year_label = f"{dates['pre_start'][:4]}–{dates['post_start'][:4]}"
+    m.addLayer(rp_dndvi_dist, vis_dndvi, f"{rp_name} dNDVI Canopy Loss     [{year_label}]", shown=show)
+    m.addLayer(rp_dndmi_dist, vis_dndmi, f"{rp_name} dNDMI Moisture Stress [{year_label}]", shown=show)
+    m.addLayer(rp_dnbr_dist,  vis_dnbr, f"{rp_name} dNBR  Burn Severity   [{year_label}]", shown=show)
+    print(f"{rp_name} ({year_label}) — layers added to map")
+
+
+# ------------------------------------------------
+# Step XII: Multi-Period Export (set EXPORT_STACK = True to run)
+# ------------------------------------------------
+
+EXPORT_STACK = False
+
+if EXPORT_STACK:
+    for rp_name, layers in rp_results.items():
+        for layer_name, layer_img in layers.items():
+            export_name = f"{rp_name}_{layer_name}"
+            task = ee.batch.Export.image.toDrive(
+                image          = layer_img,
+                description    = export_name,
+                folder         = "GEE_Exports",
+                fileNamePrefix = export_name,
+                scale          = 10,
+                region         = roi,
+                crs            = "EPSG:4326",
+                maxPixels      = 1e13,
+                fileFormat     = "GeoTIFF"
+            )
+            task.start()
+            print(f"Export started: {export_name}")

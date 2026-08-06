@@ -55,9 +55,16 @@ not comparable, and the usual causes are cloud shadow, seasonal timing, or
 viewing-angle effects. The tool raises a warning and reports what percentage of
 the area is being flagged.
 
+![Blackfeet dNDMI distribution from an October to December composite: unimodal, right-skewed, with no gap between the noise bulk near zero and the tail](images/figA1-histogram.webp)
+
+*This is the shape to distrust. The default 0.05 break, marked in yellow, sits
+on the shoulder of the noise bulk rather than beyond it, which is why 38% of the
+area came back flagged. The red lines are where the breaks were moved to.*
+
 Do not respond to this shape by raising the thresholds until the map looks
-sensible. Fix the input instead: check that both windows are July to September,
-check they cover the same months, and consider tightening the cloud ceiling.
+sensible. Fix the input instead: check that both windows are in the growing
+season, check they cover the same months, and consider tightening the clear-pixel
+threshold.
 
 **Peak not centred on zero.** The whole distribution is shifted. That is a
 systematic offset between the two composites, not localised change anywhere.
@@ -97,6 +104,12 @@ Drought, insects or disease. Corroborate with a drought monitor or a beetle
 survey before calling it disturbance. On its own this is the weakest signal and
 the most likely to be a timing artefact.
 
+![dNBR over the same area, showing scattered low and moderate burn-severity pixels that do not coincide with the moisture-stress signal](images/figA3-dnbr-crosscheck.webp)
+
+*Cape Fox, RP2. The dNBR pixels are scattered and spatially uncorrelated with
+the dNDMI signal, which is what ruling out fire looks like. The finding that
+followed was yellow-cedar decline, not burn.*
+
 ## Read the edges
 
 Once you have a genuine canopy-loss polygon, its shape tells you whether a human
@@ -111,6 +124,19 @@ is a road or utility clearance almost every time.
 **An edge following the project boundary or a plot line.** Look carefully. This
 is often harvest arriving from a neighbouring property, and whether it falls
 inside or outside the boundary is exactly the question.
+
+![dNDVI canopy loss in red at a plot boundary, with straight edges following plot lines and an external cutblock perimeter](images/figA4-dndvi-edges.webp)
+
+*Linear edges with right-angled terminations following plot lines and an
+external cutblock perimeter. Road or right-of-way clearance, not a natural
+event.*
+
+![Closer view showing the canopy-loss footprint running from the plot interior toward the project boundary](images/figA5-plot-1165.webp)
+
+*The same polygon closer in. The footprint runs from the plot interior toward
+the project boundary, consistent with removal originating from neighbouring
+cutblocks. This became a CAR asking the developer to confirm whether timber
+removal occurred on site and how it was treated in the HWP accounting.*
 
 This is why plot points are worth loading and labelling: it lets you name the
 plot in the screenshot rather than describing a location in prose.

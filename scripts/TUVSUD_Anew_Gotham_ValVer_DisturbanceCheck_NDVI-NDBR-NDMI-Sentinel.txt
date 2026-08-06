@@ -1,0 +1,241 @@
+
+# ----- Activate Earth Engine
+ee.Authenticate()
+ee.Initialize(project="murphys-deforisk")
+
+# ----- Set Spatial Filter (NW, SW, SE, NE)
+#roi_west = ee.Geometry.Rectangle([-88.02356, 35.42708, -87.42975, 35.76362])
+#roi_east = ee.Geometry.Rectangle([-85.21632, 36.22414, -84.97887, 36.41177])
+#roi      = roi_west.union(roi_east)   # single geometry for filterBounds/clip
+roi = ee.Geometry.Rectangle([-131.9125, 55.2625, -131.1633, 55.6063])
+
+
+# ----- Set Temporal & Cloud Filter
+START     = "2023-10-18"
+END       = "2024-12-31"
+MAX_CLOUD = 20
+
+# ----- Cloud mask processor
+def mask_s2_clouds(image):
+    qa = image.select("QA60")
+    cloud_bit_mask = 1 << 10
+    cirrus_bit_mask = 1 << 11
+    mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).And(
+           qa.bitwiseAnd(cirrus_bit_mask).eq(0))
+    return image.updateMask(mask).divide(10000).copyProperties(image, ["system:time_start"])
+
+# ----- Assemble pre and post composites
+pre_composite = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    .filterDate("2023-10-18", "2024-01-18")
+    .filterBounds(roi)
+    .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", MAX_CLOUD))
+    .map(mask_s2_clouds)
+    .median()
+    .clip(roi))
+
+post_composite = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+    .filterDate("2024-09-30", "2024-12-31")
+    .filterBounds(roi)
+    .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", MAX_CLOUD))
+    .map(mask_s2_clouds)
+    .median()
+    .clip(roi))
+
+# ----- Spectral index functions
+# B2=Blue, B3=Green, B4=Red, B8=NIR, B8A=narNIR, B11=SWIR1, B12=SWIR2
+def compute_ndvi(image):
+    return image.normalizedDifference(["B8",  "B4" ]).rename("NDVI")
+
+def compute_ndmi(image):
+    return image.normalizedDifference(["B8",  "B11"]).rename("NDMI")
+
+def compute_ndbr(image):
+    return image.normalizedDifference(["B8A", "B12"]).rename("NDBR")
+
+# ----- Single-date index images
+pre_ndvi  = compute_ndvi(pre_composite)
+post_ndvi = compute_ndvi(post_composite)
+pre_ndmi  = compute_ndmi(pre_composite)
+post_ndmi = compute_ndmi(post_composite)
+pre_ndbr  = compute_ndbr(pre_composite)
+post_ndbr = compute_ndbr(post_composite)
+
+# ----- Multi-date difference images (positive = loss/deterioration)
+delta_ndvi = pre_ndvi.subtract(post_ndvi).rename("dNDVI")
+delta_ndmi = pre_ndmi.subtract(post_ndmi).rename("dNDMI")
+delta_ndbr = pre_ndbr.subtract(post_ndbr).rename("dNBR")
+
+print("✓ Indices and difference images computed")
+print(f"  Pre:  2023-10-18 → 2024-01-18")
+print(f"  Post: 2024-09-30 → 2024-12-31")
+
+# ----- Quick RGB check
+vis_rgb = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 0.3, "gamma": 1.4}
+vis_ndvi = {"min": -0.2, "max": 0.8,  "palette": ["#d73027","#fc8d59","#fee08b","#d9ef8b","#1a9850"]}
+vis_ndmi = {"min": -0.5, "max": 0.5,  "palette": ["#d73027","#fc8d59","#ffffbf","#91bfdb","#4575b4"]}
+vis_ndbr = {"min": -0.5, "max": 0.5,  "palette": ["#d73027","#fc8d59","#ffffbf","#91bfdb","#4575b4"]}
+vis_diff = {"min": -0.3, "max": 0.5,  "palette": ["#1a9850","#ffffbf","#fc8d59","#d73027"]}
+
+# ----- RGB composites
+m.addLayer(pre_composite,  vis_rgb,  "Pre RGB",   shown=False)
+m.addLayer(post_composite, vis_rgb,  "Post RGB",  shown=True)
+
+# ----- Single-date NDVI
+m.addLayer(pre_ndvi,  vis_ndvi, "Pre NDVI",  shown=False)
+m.addLayer(post_ndvi, vis_ndvi, "Post NDVI", shown=False)
+
+# ----- Single-date NDMI
+m.addLayer(pre_ndmi,  vis_ndmi, "Pre NDMI",  shown=False)
+m.addLayer(post_ndmi, vis_ndmi, "Post NDMI", shown=False)
+
+# ----- Single-date NDBR
+m.addLayer(pre_ndbr,  vis_ndbr, "Pre NDBR",  shown=False)
+m.addLayer(post_ndbr, vis_ndbr, "Post NDBR", shown=False)
+
+# ----- Difference layers (disturbance signal)
+m.addLayer(delta_ndvi, vis_diff, "dNDVI – Canopy Loss",   shown=True)
+m.addLayer(delta_ndmi, vis_diff, "dNDMI – Moisture Loss", shown=True)
+m.addLayer(delta_ndbr, vis_diff, "dNBR  – Burn Severity", shown=True)
+
+m.set_center(-86.7, 35.9, 9)
+m
+
+# --------------------------------
+
+# --------------------------------
+
+# ----- Classification functions
+# NDVI single-date: Water / Rock+Bare / Shrub+Grass / Forest
+def classify_ndvi(ndvi_image):
+    return (ndvi_image
+            .where(ndvi_image.lt(-0.1), 0)
+            .where(ndvi_image.gte(-0.1).And(ndvi_image.lt(0.2)), 1)
+            .where(ndvi_image.gte(0.2).And(ndvi_image.lt(0.4)), 2)
+            .where(ndvi_image.gte(0.4), 3)
+            .rename("NDVI_class").toInt16())
+
+# NDMI single-date: Bare / High stress / Average / Healthy
+def classify_ndmi(ndmi_image):
+    return (ndmi_image
+            .where(ndmi_image.lt(-0.2), 0)
+            .where(ndmi_image.gte(-0.2).And(ndmi_image.lt(0.0)), 1)
+            .where(ndmi_image.gte(0.0).And(ndmi_image.lt(0.4)), 2)
+            .where(ndmi_image.gte(0.4), 3)
+            .rename("NDMI_class").toInt16())
+
+# dNBR burn severity: Regrowth / Low / Moderate / High
+def classify_ndbr(ndbr_diff_image):
+    return (ndbr_diff_image
+            .where(ndbr_diff_image.lt(-0.4), 0)
+            .where(ndbr_diff_image.gte(-0.4).And(ndbr_diff_image.lt(-0.2)), 1)
+            .where(ndbr_diff_image.gte(-0.2).And(ndbr_diff_image.lt(0.0)), 2)
+            .where(ndbr_diff_image.gte(0.0), 3)
+            .rename("NDBR_class").toInt16())
+
+# dNDVI canopy loss: None / Low / Moderate / High
+def classify_delta_ndvi(delta):
+    return (delta
+            .where(delta.lt(0.10), 0)
+            .where(delta.gte(0.10).And(delta.lt(0.20)), 1)
+            .where(delta.gte(0.20).And(delta.lt(0.35)), 2)
+            .where(delta.gte(0.35), 3)
+            .rename("dNDVI_class").toInt16())
+
+# ----- Apply classifications
+post_ndvi_class  = classify_ndvi(post_ndvi)
+post_ndmi_class  = classify_ndmi(post_ndmi)
+ndbr_class       = classify_ndbr(delta_ndbr)
+delta_ndvi_class = classify_delta_ndvi(delta_ndvi)
+
+
+# ----- Visualisation parameters
+vis_delta        = {"min": -0.3, "max": 0.5, "palette": ["#1a9850","#ffffbf","#fc8d59","#d73027"]}
+vis_4class_ndvi  = {"min": 0, "max": 3, "palette": ["#0077BE","#C2B280","#90EE90","#228B22"]}
+vis_4class_ndmi  = {"min": 0, "max": 3, "palette": ["#D2691E","#FF4500","#FFD700","#006400"]}
+vis_4class_dndvi = {"min": 0, "max": 3, "palette": ["#FFFFFF","#FFEDA0","#FC4E2A","#800026"]}
+vis_4class_ndbr  = {"min": 0, "max": 3, "palette": ["#00A86B","#FFFF00","#FF8C00","#8B0000"]}
+
+
+# ----- Build map
+m.addLayer(pre_composite,  vis_rgb, "Pre RGB",  shown=False)
+m.addLayer(post_composite, vis_rgb, "Post RGB", shown=True)
+m.addLayer(post_ndvi, vis_ndvi, "Post NDVI (continuous)", shown=False)
+m.addLayer(post_ndmi, vis_ndmi, "Post NDMI (continuous)", shown=False)
+m.addLayer(post_ndvi_class, vis_4class_ndvi, "Post NDVI – Classified [Water/Bare/Shrub/Forest]",   shown=False)
+m.addLayer(post_ndmi_class, vis_4class_ndmi, "Post NDMI – Classified [Bare/Stressed/Avg/Healthy]", shown=False)
+m.addLayer(delta_ndvi, vis_delta, "dNDVI – Canopy Loss (continuous)",  shown=False)
+m.addLayer(delta_ndbr, vis_delta, "dNBR  – Burn Severity (continuous)", shown=False)
+
+# Difference classified (on by default)
+m.addLayer(delta_ndvi_class, vis_4class_dndvi, "dNDVI – Canopy Loss [None/Low/Mod/High]",          shown=True)
+m.addLayer(ndbr_class,       vis_4class_ndbr,  "dNBR  – Burn Severity [Regrowth/Low/Mod/High]",    shown=True)
+
+m.set_center(-86.7, 35.9, 9)
+m
+
+
+# -----------------------------------
+
+# -----------------------------------
+
+
+# ----- Export GeoTIFF to Drive (True/False)
+EXPORT_DRIVE = True
+
+if EXPORT_DRIVE:
+    export_layers = {
+        "Post_NDVI_continuous":    post_ndvi,
+        "Post_NDMI_continuous":    post_ndmi,
+        "Post_NDVI_classified":    post_ndvi_class,
+        "Post_NDMI_classified":    post_ndmi_class,
+        "dNDVI_canopy_loss":       delta_ndvi,
+        "dNDVI_canopy_loss_class": delta_ndvi_class,
+        "dNBR_burn_severity":      delta_ndbr,
+        "dNBR_burn_severity_class": ndbr_class,
+    }
+    for name, layer in export_layers.items():
+        task = ee.batch.Export.image.toDrive(
+            image=layer,
+            description=name,
+            folder="GEE_Exports",
+            fileNamePrefix=name,
+            scale=10,
+            region=roi,
+            crs="EPSG:4326",
+            maxPixels=1e13,
+            fileFormat="GeoTIFF"
+        )
+        task.start()
+
+
+
+
+# ----- INDEX Glossary (S2 bands)
+
+# NDVI  = (B8 - B4)  / (B8 + B4)       NIR=B8,    Red=B4
+# NDMI  = (B8 - B11) / (B8 + B11)      NIR=B8,    SWIR1=B11
+# NBR   = (B8A - B12) / (B8A + B12)    NarrowNIR, SWIR2=B12
+#
+# NDVI land cover thresholds (post-composite):
+#   Water:        -1.0 to -0.10
+#   Rock/Bare:   -0.10 to  0.20
+#   Shrub/Grass:  0.20 to  0.40
+#   Forest:       0.40 to  1.00
+#
+# dNDVI canopy-loss thresholds (pre minus post):
+#   No loss:      < 0.10
+#   Low:        0.10–0.20
+#   Moderate:   0.20–0.35
+#   High:         > 0.35
+#
+# NDMI stress thresholds (post-composite):
+#   Bare/no canopy:   -1.0 to -0.20
+#   High stress:     -0.20 to  0.00
+#   Average:          0.00 to  0.40
+#   Healthy:          0.40 to  1.00
+#
+# dNBR burn severity thresholds:
+#   Regrowth:     < -0.40
+#   Low severity: -0.40 to -0.20
+#   Moderate:    -0.20 to  0.00
+#   High:           > 0.00

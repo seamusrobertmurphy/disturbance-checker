@@ -1,0 +1,265 @@
+
+
+#  Canopy Disturbance Check
+# ---------------------------------------------------------------------------------
+#
+#  Outputs:
+#  dNDVI = (canopy loss)    |   dNDMI (moisture stress) |  dNBR (burn severity)
+#  NDVI  = (B8-B4)/(B8+B4)  |   NDMI=(B8-B11)/(B8+B11)  |  NBR = (B8A-B12)/(B8A+B12)
+#  dNDVI = pre-post (positive = loss)  
+#  dNDMI = pre-post (positive = loss)  
+#  dNBR  = post-pre (positive = burned)
+#
+# ---------------------------------------------------------------------------------
+
+
+# Summary
+# -------------
+#    Detect and classify forest disturbance between two time periods using
+#    Sentinel-2 surface reflectance imagery. Outputs three disturbance layers:
+#        • dNDVI  — Canopy loss      (harvest, blowdown, deforestation)
+#        • dNDMI  — Moisture stress  (pest, drought, beetle damage)
+#        • dNBR   — Burn severity    (wildfire, prescribed burn)
+#
+#    1. Build cloud-free median composites for a pre- and post-disturbance window
+#    2. Compute spectral indices (NDVI, NDMI, NBR) for each composite
+#    3. Subtract pre from post (or post from pre) to isolate change signal
+#    4. Classify the change magnitude into Low / Moderate / High severity
+#    5. Mask water bodies and undisturbed pixels for a clean map display
+#
+# Spectral Indices 
+#
+#    NDVI  = (B8  − B4)  / (B8  + B4)    NIR vs Red         — vegetation vigour
+#    NDMI  = (B8  − B11) / (B8  + B11)   NIR vs SWIR1       — canopy moisture
+#    NBR   = (B8A − B12) / (B8A + B12)   narNIR vs SWIR2    — fire / char signal
+#
+#    dNDVI  = pre − post   (positive = canopy loss)
+#    dNDMI  = pre − post   (positive = moisture loss / stress)
+#    dNBR   = post − pre   (positive = burned, standard MTBS convention)
+#
+# Expecting client inquiries, these here dictionaries compiled here for quick review
+
+
+
+# STEPs I & II: QGIS Plugins 
+# ------------------------------
+
+# Open Plugins Play Store in top left panel, follow steps in Scripts folder
+# Search all GEE or Google Earth Engine PLugins
+# Ensure search settings is set to "All Plugins"
+# Install all four GEE-related plugins, GEE DAta Catalog and GEEMAP essential
+# Install more plugins, as needed, QGIS-python-3.12 setup is robust. 
+# Activtate all four GEE-related plugins, close plugin store, and return to map
+
+
+# STEP III: Enable Earth Engine 
+# ------------------------------
+
+# Copy the following lines into "Code" box of GEEMAP Plugin and hit "run"
+# This imports dependencies and then authenticates and initializes
+# MAke sure to add project-id or use current name, fyi, this is needed to export to drive 
+
+import ee
+import geemap
+from datetime import date
+ee.Authenticate()
+ee.Initialize(project="murphys-deforisk")
+ 
+# STEP IV: Assemble Data Cube
+# --------------------------------
+
+# Spatial Filter
+roi = ee.Geometry.Rectangle([-119.7491, 47.278, -115.190, 49.524])
+m.set_center(-118.393, 48.562, 7)
+# 49.2383,-119.7491
+# 47.278,-120.605
+# 47.199,-115.190
+# 49.524,-115.439
+
+# Temporal Filter
+RP_START_BEGIN = "2020-12-01"   
+RP_START_END   = "2021-03-28"   
+RP_END_BEGIN   = "2023-05-01"   
+RP_END_END     = "2023-08-30"   
+
+
+# Cloud Filter - Search Tolerance 
+MAX_CLOUD = 30 
+
+# Cloud Removal & Median Normalizer
+def mask_s2_clouds(image):
+    qa              = image.select("QA60")
+    cloud_bit_mask  = 1 << 10
+    cirrus_bit_mask = 1 << 11
+    mask = qa.bitwiseAnd(cloud_bit_mask).eq(0).And(
+           qa.bitwiseAnd(cirrus_bit_mask).eq(0))
+    return image.updateMask(mask).divide(10000).copyProperties(image, ["system:time_start"])
+
+# Temporal Normalizer/Compiler
+def build_composite(start, end, roi_geom):
+    return (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+            .filterDate(start, end)
+            .filterBounds(roi_geom)
+            .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", MAX_CLOUD))
+            .map(mask_s2_clouds)
+            .median()
+            .clip(roi_geom))
+ 
+
+# Assemble & Process 
+pre_composite  = build_composite(RP_START_BEGIN, RP_START_END, roi)   # RP start month
+post_composite = build_composite(RP_END_BEGIN,   RP_END_END,   roi)   # RP end month
+ 
+
+#  Water Masking - JRC Surface Water 
+# We mask pixels with > 50%  water  to preserve blue and cirrus band integrity 
+# Supports atmoshperic corrections, short of peudodark spectral processing (key for landsat)
+water_mask = (ee.Image("JRC/GSW1_4/GlobalSurfaceWater")
+              .select("occurrence")
+              .lt(50)
+              .unmask(1))
+ 
+ 
+# Spectral Index Equations
+def compute_ndvi(image):
+    return image.normalizedDifference(["B8",  "B4" ]).rename("NDVI")
+def compute_ndmi(image):
+    return image.normalizedDifference(["B8",  "B11"]).rename("NDMI")
+def compute_ndbr(image):
+    return image.normalizedDifference(["B8A", "B12"]).rename("NDBR")
+
+# Single-Date Imagery
+pre_ndvi  = compute_ndvi(pre_composite)
+post_ndvi = compute_ndvi(post_composite)
+pre_ndmi  = compute_ndmi(pre_composite)
+post_ndmi = compute_ndmi(post_composite)
+pre_ndbr  = compute_ndbr(pre_composite)
+post_ndbr = compute_ndbr(post_composite)
+ 
+ 
+# Multi-Date Imagery 
+# dNDVI/dNDMI = pre - post (positive = loss/stress)
+# dNBR        = post - pre (positive = burned, MTBS convention)
+delta_ndvi = pre_ndvi.subtract(post_ndvi).rename("dNDVI").updateMask(water_mask)
+delta_ndmi = pre_ndmi.subtract(post_ndmi).rename("dNDMI").updateMask(water_mask)
+delta_ndbr = post_ndbr.subtract(pre_ndbr).rename("dNBR").updateMask(water_mask)
+ 
+ 
+# Classify by Disturbance Severity
+# dNDVI — canopy loss (harvest/deforestation)
+# Class 1 = Low-Moderate (0.10-0.20), Class 2 = Moderate-High (0.20-0.35), Class 3 = High (>0.35)
+def classify_delta_ndvi(delta):
+    return (delta
+            .where(delta.lt(0.10), 0)
+            .where(delta.gte(0.10).And(delta.lt(0.20)), 1)
+            .where(delta.gte(0.20).And(delta.lt(0.35)), 2)
+            .where(delta.gte(0.35), 3)
+            .rename("dNDVI_class").toInt16())
+ 
+# dNDMI — moisture stress (pest/drought/beetle)
+# Class 1 = Emerging (0.05-0.15), Class 2 = Moderate (0.15-0.25), Class 3 = High (>0.25)
+def classify_delta_ndmi(delta):
+    return (delta
+            .where(delta.lt(0.05), 0)
+            .where(delta.gte(0.05).And(delta.lt(0.15)), 1)
+            .where(delta.gte(0.15).And(delta.lt(0.25)), 2)
+            .where(delta.gte(0.25), 3)
+            .rename("dNDMI_class").toInt16())
+ 
+# dNBR — burn severity (MTBS/USFS PNW standard)
+# Class 1 = Low (0.10-0.27), Class 2 = Moderate (0.27-0.44), Class 3 = High (>0.44)
+def classify_ndbr(delta):
+    return (delta
+            .where(delta.lt(0.10), 0)
+            .where(delta.gte(0.10).And(delta.lt(0.27)), 1)
+            .where(delta.gte(0.27).And(delta.lt(0.44)), 2)
+            .where(delta.gte(0.44), 3)
+            .rename("NDBR_class").toInt16())
+ 
+delta_ndvi_class = classify_delta_ndvi(delta_ndvi)
+delta_ndmi_class = classify_delta_ndmi(delta_ndmi)
+ndbr_class       = classify_ndbr(delta_ndbr)
+ 
+# Mask class 0 (undisturbed = transparent on map)
+delta_ndvi_disturbed = delta_ndvi_class.updateMask(delta_ndvi_class.gt(0))
+delta_ndmi_disturbed = delta_ndmi_class.updateMask(delta_ndmi_class.gt(0))
+ndbr_disturbed       = ndbr_class.updateMask(ndbr_class.gt(0))
+ 
+ 
+
+
+
+# Visualisation - Load Layers & Render Live Map
+vis_rgb   = {"bands": ["B4","B3","B2"], "min": 0.02, "max": 0.25, "gamma": 1.2}
+vis_ndvi  = {"min": -0.2, "max": 0.8, "palette": ["#d73027","#fc8d59","#fee08b","#d9ef8b","#1a9850"]}
+vis_ndmi  = {"min": -0.5, "max": 0.5, "palette": ["#d73027","#fc8d59","#ffffbf","#91bfdb","#4575b4"]}
+vis_delta = {"min": -0.3, "max": 0.5, "palette": ["#1a9850","#ffffbf","#fc8d59","#d73027"]}
+vis_dndvi = {"min": 1, "max": 3, "palette": ["#FFEDA0","#FC4E2A","#800026"]}
+vis_ndmi_d = {"min": 1, "max": 3, "palette": ["#FEB24C","#FD8D3C","#B10026"]}
+vis_ndbr  = {"min": 1, "max": 3, "palette": ["#FFEDA0","#FC4E2A","#800026"]}
+ 
+ 
+# ----- Map Layers (GEEMAP in QGIS assigns 'm' to map objects)
+m.addLayer(pre_composite,  vis_rgb, "Pre RGB",  shown=False)
+m.addLayer(post_composite, vis_rgb, "Post RGB", shown=False)
+ 
+m.addLayer(pre_ndvi,  vis_ndvi, "Pre NDVI",  shown=False)
+m.addLayer(post_ndvi, vis_ndvi, "Post NDVI", shown=False)
+m.addLayer(pre_ndmi,  vis_ndmi, "Pre NDMI",  shown=False)
+m.addLayer(post_ndmi, vis_ndmi, "Post NDMI", shown=False)
+ 
+m.addLayer(delta_ndvi, vis_delta, "dNDVI continuous", shown=False)
+m.addLayer(delta_ndmi, vis_delta, "dNDMI continuous", shown=False)
+m.addLayer(delta_ndbr, vis_delta, "dNBR  continuous", shown=False)
+ 
+m.addLayer(delta_ndvi_disturbed, vis_dndvi,  "dNDVI - Canopy Loss     [Low/Mod/High]", shown=True)
+m.addLayer(delta_ndmi_disturbed, vis_ndmi_d, "dNDMI - Moisture Stress [Low/Mod/High]", shown=True)
+m.addLayer(ndbr_disturbed,       vis_ndbr,   "dNBR  - Burn Severity   [Low/Mod/High]", shown=True)
+m.addLayer(ee.FeatureCollection([ee.Feature(roi)]), {"color": "cyan", "fillColor": "00000000"}, "ROI")
+m
+
+
+
+# STEP VI: Export Outputs  (Optional)
+# --------------------------------
+
+# Exporting layers from Earth Engine is a challenge, which is possible via gcloud or via google drive personal account
+# Alternatively, we may simply run the script again upon opening QGIS, which also saves space consider size of rasters
+
+# Change 'folder="GEE_EXports"' to your google drive folder
+#  Set 'EXPORT = False' to 'EXPORT = True ' to run, or leave as False to skip.
+
+EXPORT = False
+ 
+if EXPORT:
+    export_layers = {
+        "dNDVI_canopy_loss_classified":     delta_ndvi_disturbed,
+        "dNDMI_moisture_stress_classified": delta_ndmi_disturbed,
+        "dNBR_burn_severity_classified":    ndbr_disturbed,
+        "pre_RGB":                          pre_composite,
+        "post_RGB":                         post_composite,
+    }
+    for name, layer in export_layers.items():
+        task = ee.batch.Export.image.toDrive(
+            image=layer, description=name, folder="GEE_Exports",
+            fileNamePrefix=name, scale=10, region=roi,
+            crs="EPSG:4326", maxPixels=1e13, fileFormat="GeoTIFF"
+        )
+        task.start()
+ 
+ 
+ 
+# Pro Tip: 
+# -----------------------
+
+#If image composites of RGB-configured or multi-band indexed imagery is producing a patchy mosaic with missing tiles, 
+#we may need to widen out the temporal, spatial, cloud or spectral normalization filters. For instance, as we are 
+#using a median-derived normalization, then our median for that neighbourhood of pixels is derived from the median 
+#values estimated from the cluster of horizontal, vertical or temporal grouped pixel neighbourhoods. Hence, in Step IV 
+#above, the spectral normalization function expanded by the filterBounds or filterDate functions, which gives the 
+#normalization or median calculation of spectral values a larger sample to derive from. Another final technical note to 
+#consider, most cloud removal and spectral normalization algorithms tend to back-fill or estiamte medians by sampling 
+#from earlier dates or data points to later ones. However, some do the opposite, sampling pixel median values 
+#backwards from most future date to earliest date. This also has critical implications on pixel normalization and 
+#replacement of cloud removal patches, key methodological concern in remote sensing of spectral and seasonally variable 
+#forested landscapes. 

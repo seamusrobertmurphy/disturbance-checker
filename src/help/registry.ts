@@ -1,5 +1,6 @@
 import earthEngineSetup from "../../docs/earth-engine-setup.md";
 import firstRun from "../../docs/first-run.md";
+import fromQgis from "../../docs/from-qgis.md";
 import interpretingResults from "../../docs/interpreting-results.md";
 import methods from "../../docs/methods.md";
 import revisionNotes from "../../docs/revision-notes.md";
@@ -52,6 +53,14 @@ export const GUIDES: Guide[] = [
       "What the layers mean, reading the histogram before trusting the map, and what to confirm before raising anything.",
     audience: "operator",
     html: interpretingResults,
+  },
+  {
+    id: "from-qgis",
+    title: "From QGIS to the browser",
+    summary:
+      "What this tool replaces, what is deliberately identical, what changed and why, and what the QGIS script still does better.",
+    audience: "reference",
+    html: fromQgis,
   },
   {
     id: "methods",
