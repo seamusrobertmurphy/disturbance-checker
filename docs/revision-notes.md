@@ -126,6 +126,40 @@ table gives them the numbers to do it.
 
 ---
 
+## Deployment record
+
+### 2026-08-11  First deployment live
+
+The Pages site is live at
+<https://seamusrobertmurphy.github.io/disturbance-checker/>. Two setup steps
+had never been done and both are now in place: GitHub Pages was enabled on the
+repository (source: GitHub Actions), and the `GEE_OAUTH_CLIENT_ID` secret was
+added, so the OAuth client ID is compiled into the deployed bundle and the
+bare URL works without query parameters.
+
+The client is a Web application client on the team Cloud project
+(`924152150069-grabhic21lkllt0q2jc1kaptk4q1dmmo.apps.googleusercontent.com`,
+recorded here because it ships in the public bundle anyway). Colleagues still
+need a test-user entry and the two IAM roles per
+[earth-engine-setup.md](earth-engine-setup.md).
+
+Sign-in from the deployed site was confirmed working by the operator the same
+day.
+
+### 2026-08-11  ArcGIS script moved to tile layers
+
+The ArcGIS Pro production script in the training library
+(`sop-library/sop-disturbances/Scripts/`) was rewritten to add results as live
+Earth Engine tile layers via `getMapId` and `addDataFromPath`, the same
+mechanism this tool and the QGIS workflow use, after its `getDownloadURL`
+front end failed with an opaque HTTP 400. Its download path remains as a
+fallback and now surfaces Earth Engine's real error body. Stale-token 401s
+trigger `ee.Authenticate(force=True)` automatically, per SOP section 2.2. The
+ArcGIS SOP docx still describes the download-first behaviour; its Steps VII
+and X need a matching revision.
+
+---
+
 ## Findings from live runs
 
 Add dated entries as runs happen. Suggested shape:

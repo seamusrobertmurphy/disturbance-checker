@@ -207,6 +207,11 @@ plugin id, though updating an existing one is picked up on reload.
 
 ## Path C: your Pages deploy
 
+Done on 2026-08-11: the site is live at
+<https://seamusrobertmurphy.github.io/disturbance-checker/> with the client ID
+compiled in, and sign-in was confirmed working. The steps are kept for
+re-creating the setup on a fork or a new repository.
+
 1. **Settings → Secrets and variables → Actions**, add `GEE_OAUTH_CLIENT_ID`.
 2. **Settings → Pages**, set Source to **GitHub Actions**.
 3. `git push -u origin main`.

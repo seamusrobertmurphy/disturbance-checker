@@ -122,8 +122,10 @@ means a saved project is a description of a check rather than a snapshot of one.
 ## Deployment
 
 The published site is a GeoLibre web build with this plugin baked in, served
-from GitHub Pages. GeoLibre is not vendored here; the deploy workflow checks it
-out at a pinned tag, drops in the built plugin, builds, and publishes.
+from GitHub Pages at
+<https://seamusrobertmurphy.github.io/disturbance-checker/>. GeoLibre is not
+vendored here; the deploy workflow checks it out at a pinned tag, drops in the
+built plugin, builds, and publishes.
 
 Before the first deploy you need a Cloud project and an OAuth client. See
 [`docs/earth-engine-setup.md`](docs/earth-engine-setup.md), which covers
