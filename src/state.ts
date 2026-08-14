@@ -14,6 +14,7 @@ import {
   type MaskOptions,
 } from "./raster/mask";
 import type { Look } from "./reference/wayback";
+import type { IdsSummary, MtbsSummary } from "./reference/corroborate";
 
 export type RunStatus =
   | "idle"
@@ -88,6 +89,24 @@ export interface State {
    */
   rgbBlend: number;
   rgbBlendActive: boolean;
+
+  /**
+   * Independent records of ground disturbance over the same area.
+   *
+   * Never an input to the analysis. Held separately from `results` for that
+   * reason: nothing downstream of a composite may read them, and keeping them
+   * out of the result object makes that structural rather than a convention.
+   */
+  corroboration: Corroboration | null;
+  corroborationStatus: "idle" | "loading" | "ready" | "error";
+  corroborationError: string | null;
+}
+
+export interface Corroboration {
+  ids: IdsSummary;
+  mtbs: MtbsSummary;
+  years: number[];
+  fetchedAt: number;
 }
 
 function defaultPeriod(id: string, preYear: number, postYear: number): Period {
@@ -133,6 +152,10 @@ export function createState(): State {
     activeLook: null,
     rgbBlend: 1,
     rgbBlendActive: false,
+
+    corroboration: null,
+    corroborationStatus: "idle",
+    corroborationError: null,
 
     runStartedAt: null,
     results: [],

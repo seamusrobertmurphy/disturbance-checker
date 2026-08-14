@@ -123,6 +123,45 @@ export function buildManifest(state: State, runAt: Date): string {
     }
   }
 
+  const corroboration = state.corroboration;
+  if (corroboration) {
+    lines.push("--- Corroborating record ---");
+    lines.push(
+      `  Queried       ${corroboration.years[0]} to ${corroboration.years[corroboration.years.length - 1]}, over the area of interest`,
+    );
+    if (corroboration.mtbs.fires.length === 0) {
+      lines.push("  Fire          no mapped fire intersects this area in these years");
+    } else {
+      for (const fire of corroboration.mtbs.fires) {
+        lines.push(
+          `  Fire          ${fire.name} (${fire.year}), ${Math.round(fire.acres).toLocaleString()} acres${fire.ignition ? `, ignited ${fire.ignition}` : ""}`,
+        );
+      }
+    }
+    if (corroboration.mtbs.yearsUnavailable.length > 0) {
+      lines.push(
+        `  NOT ASSESSED  burn severity is not yet published for ${corroboration.mtbs.yearsUnavailable.join(", ")}; absence is not evidence`,
+      );
+    }
+    if (corroboration.ids.groups.length === 0) {
+      lines.push("  Insect/disease no damage recorded over this area in these years");
+    } else {
+      lines.push(
+        `  Insect/disease ${Math.round(corroboration.ids.totalAcres).toLocaleString()} acres recorded across ${corroboration.ids.groups.length} agent-year groups`,
+      );
+      for (const group of corroboration.ids.groups.slice(0, 10)) {
+        lines.push(
+          `    ${group.year}  ${group.damageType}, ${group.agent}, ${Math.round(group.acres).toLocaleString()} acres`,
+        );
+      }
+    }
+    lines.push("  Sources       MTBS (USGS/USFS); USFS Forest Health Protection IDS");
+    lines.push(
+      "  Note          corroborating evidence only. No composite, delta, break or area in this report is derived from it.",
+    );
+    lines.push("");
+  }
+
   if (state.diagnostics.length > 0) {
     lines.push("--- Diagnostics raised ---");
     for (const diagnostic of state.diagnostics) {

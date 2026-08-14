@@ -878,3 +878,40 @@ select.dc-input {
   font-size: 11px;
   opacity: 0.75;
 }
+
+/* Section 8, corroboration. A compact ledger: year, agent, damage type and
+   acres, because that is the order a finding quotes them in. */
+.dc-damage {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dc-damage-row {
+  display: grid;
+  grid-template-columns: 42px 1fr auto auto;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--dc-border, rgba(128, 128, 128, 0.18));
+}
+
+.dc-damage-year {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.dc-damage-agent {
+  font-weight: 500;
+}
+
+.dc-damage-type {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.dc-damage-acres {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

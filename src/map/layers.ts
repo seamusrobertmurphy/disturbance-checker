@@ -21,7 +21,7 @@ interface MapLibreLike {
   once?: (event: string, handler: () => void) => void;
 }
 
-export type VectorRole = "boundary" | "smz" | "plots";
+export type VectorRole = "boundary" | "smz" | "plots" | "fire";
 
 export interface ManagedLayer {
   id: string;
@@ -373,7 +373,11 @@ export class MapLayerManager {
             source: sourceId,
             paint: {
               "fill-color": options.color,
-              "fill-opacity": options.role === "smz" ? 0.18 : 0.04,
+              // A fire perimeter is evidence to read the analysis against, so
+              // it is drawn heavier than a context outline but still light
+              // enough to see the classified raster through.
+              "fill-opacity":
+                options.role === "smz" ? 0.18 : options.role === "fire" ? 0.22 : 0.04,
             },
           });
           map.addLayer({
@@ -383,7 +387,8 @@ export class MapLayerManager {
             paint: {
               "line-color": options.color,
               "line-width": options.role === "boundary" ? 2.5 : 1.5,
-              "line-dasharray": options.role === "smz" ? [3, 2] : [1, 0],
+              "line-dasharray":
+                options.role === "smz" ? [3, 2] : options.role === "fire" ? [4, 2] : [1, 0],
             },
           });
           nativeLayerIds.push(fillId, lineId);

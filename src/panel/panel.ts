@@ -10,11 +10,20 @@ import {
   Aoi,
   Period,
   PeriodResult,
+  aoiBounds,
   runPeriod,
 } from "../analysis/run";
 import { describeError } from "../errors";
 import { CLOUD_MASKS } from "../raster/mask";
 import { gridCornersLonLat } from "../raster/grid";
+import {
+  IDS_ATTRIBUTION,
+  MTBS_ATTRIBUTION,
+  burnedAreas,
+  insectAndDisease,
+  withinUnitedStates,
+  yearsCovered,
+} from "../reference/corroborate";
 import {
   WAYBACK_ATTRIBUTION,
   bracketLooks,
@@ -202,7 +211,16 @@ export class DisturbancePanel {
       ),
     );
     this.container.appendChild(
-      this.section("findings", "8", "Findings", "", () => this.renderFindings()),
+      this.section(
+        "corroborate",
+        "8",
+        "Corroboration",
+        this.summariseCorroboration(),
+        () => this.renderCorroboration(),
+      ),
+    );
+    this.container.appendChild(
+      this.section("findings", "9", "Findings", "", () => this.renderFindings()),
     );
     this.container.appendChild(this.renderHelpFooter());
   }
@@ -1458,6 +1476,203 @@ export class DisturbancePanel {
   private layerKeyFor(result: PeriodResult, suffix: string): string {
     const layer = result.layers.find((entry) => entry.key.endsWith(suffix));
     return (layer?.key ?? "").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+  }
+
+  // Section 8 ---------------------------------------------------------------
+
+  private summariseCorroboration(): string {
+    const held = this.state.corroboration;
+    if (this.state.corroborationStatus === "loading") return "searching";
+    if (!held) return "";
+    const parts: string[] = [];
+    if (held.mtbs.fires.length > 0) parts.push(`${held.mtbs.fires.length} fires`);
+    if (held.ids.groups.length > 0) {
+      parts.push(`${Math.round(held.ids.totalAcres).toLocaleString()} ac damage`);
+    }
+    return parts.join(", ") || "nothing recorded";
+  }
+
+  /**
+   * Independent records of what happened on the ground.
+   *
+   * The indices say a delta moved. These say whether an aerial observer
+   * recorded beetle mortality over the same ground, or whether a mapped fire
+   * burned through it. Neither is an input: no composite, delta, break or area
+   * changes because of anything in this section. They exist so a finding can
+   * cite a second, unrelated source with its own date and its own provenance.
+   */
+  private renderCorroboration(): HTMLElement {
+    const body = el("div", "dc-stack");
+    const bbox = this.aoiBbox();
+
+    if (!bbox) {
+      body.appendChild(
+        el("p", "dc-hint", "Set an area of interest first."),
+      );
+      return body;
+    }
+
+    if (!withinUnitedStates(bbox)) {
+      body.appendChild(
+        this.notice(
+          "info",
+          "Outside the surveyed area",
+          "The insect and disease survey and the burn severity assessment are United States programmes. This area is outside both, so there is nothing to query. That is a gap in coverage, not an absence of disturbance, and a finding should not cite either dataset here.",
+        ),
+      );
+      return body;
+    }
+
+    if (this.state.corroborationStatus === "idle") {
+      body.appendChild(
+        button("Search the record", () => void this.fetchCorroboration(), "primary"),
+      );
+      body.appendChild(
+        el(
+          "p",
+          "dc-hint",
+          "Queries the Forest Service aerial insect and disease survey and the Monitoring Trends in Burn Severity assessment over this area, for every year the reporting windows span.",
+        ),
+      );
+      return body;
+    }
+
+    if (this.state.corroborationStatus === "loading") {
+      body.appendChild(el("p", "dc-hint", "Querying the federal record."));
+      return body;
+    }
+
+    if (this.state.corroborationStatus === "error") {
+      body.appendChild(
+        this.notice(
+          "warning",
+          "The record could not be read",
+          this.state.corroborationError ??
+            "The service is unavailable. The analysis is unaffected.",
+        ),
+      );
+      body.appendChild(
+        button("Try again", () => void this.fetchCorroboration(), "secondary"),
+      );
+      return body;
+    }
+
+    const held = this.state.corroboration;
+    if (!held) return body;
+
+    body.appendChild(
+      el("div", "dc-subhead", `Burn severity, ${held.years[0]} to ${held.years[held.years.length - 1]}`),
+    );
+    if (held.mtbs.fires.length === 0) {
+      body.appendChild(
+        el("p", "dc-hint", "No mapped fire intersects this area in these years."),
+      );
+    } else {
+      for (const fire of held.mtbs.fires) {
+        const row = el("div", "dc-look");
+        const head = el("div", "dc-look-head");
+        head.appendChild(el("span", "dc-look-date", fire.name));
+        head.appendChild(el("span", "dc-look-tag", String(fire.year)));
+        row.appendChild(head);
+        row.appendChild(
+          el(
+            "div",
+            "dc-look-meta",
+            `${Math.round(fire.acres).toLocaleString()} acres${fire.ignition ? ` · ignited ${fire.ignition}` : ""}`,
+          ),
+        );
+        body.appendChild(row);
+      }
+      body.appendChild(
+        button("Show perimeters", () => this.showPerimeters(), "secondary"),
+      );
+    }
+    if (held.mtbs.yearsUnavailable.length > 0) {
+      body.appendChild(
+        this.notice(
+          "warning",
+          "Some years are not yet assessed",
+          `Burn severity is mapped from imagery a year or more after a fire, so ${held.mtbs.yearsUnavailable.join(", ")} ${held.mtbs.yearsUnavailable.length === 1 ? "is" : "are"} not published yet. Absence here is not evidence that nothing burned.`,
+        ),
+      );
+    }
+
+    body.appendChild(el("div", "dc-subhead", "Insect and disease survey"));
+    if (held.ids.groups.length === 0) {
+      body.appendChild(
+        el("p", "dc-hint", "No damage recorded over this area in these years."),
+      );
+    } else {
+      const table = el("div", "dc-damage");
+      for (const group of held.ids.groups.slice(0, 12)) {
+        const row = el("div", "dc-damage-row");
+        row.appendChild(el("span", "dc-damage-year", String(group.year)));
+        row.appendChild(el("span", "dc-damage-agent", group.agent));
+        row.appendChild(el("span", "dc-damage-type", group.damageType));
+        row.appendChild(
+          el("span", "dc-damage-acres", `${Math.round(group.acres).toLocaleString()} ac`),
+        );
+        table.appendChild(row);
+      }
+      body.appendChild(table);
+      body.appendChild(
+        el(
+          "p",
+          "dc-hint",
+          "Acres are the survey's own figures. The polygons are sketch-mapped from an aircraft, so their areas are approximate by construction and are not recomputed here.",
+        ),
+      );
+    }
+
+    body.appendChild(
+      el("p", "dc-hint", `${MTBS_ATTRIBUTION}. ${IDS_ATTRIBUTION}.`),
+    );
+    return body;
+  }
+
+  private aoiBbox(): [number, number, number, number] | null {
+    const aoi = this.state.aoi;
+    if (!aoi) return null;
+    const bounds = aoiBounds(aoi);
+    if (!bounds) return null;
+    return [bounds.west, bounds.south, bounds.east, bounds.north];
+  }
+
+  private async fetchCorroboration(): Promise<void> {
+    const bbox = this.aoiBbox();
+    if (!bbox) return;
+    const years = yearsCovered(this.state.periods);
+
+    this.patch({ corroborationStatus: "loading", corroborationError: null });
+    try {
+      const [ids, mtbs] = await Promise.all([
+        insectAndDisease(bbox, years),
+        burnedAreas(bbox, years),
+      ]);
+      this.patch({
+        corroboration: { ids, mtbs, years, fetchedAt: Date.now() },
+        corroborationStatus: "ready",
+        corroborationError: null,
+      });
+    } catch (error) {
+      this.patch({
+        corroborationStatus: "error",
+        corroborationError: describeError(error),
+      });
+    }
+  }
+
+  private showPerimeters(): void {
+    const held = this.state.corroboration;
+    if (!held || held.mtbs.perimeters.features.length === 0) return;
+    this.layers.addVector({
+      key: "ref-mtbs",
+      name: "Mapped fire perimeters",
+      geojson: held.mtbs.perimeters,
+      role: "fire",
+      labelField: null,
+      color: "#d7301f",
+    });
   }
 
   private renderFindings(): HTMLElement {
