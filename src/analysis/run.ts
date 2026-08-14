@@ -6,11 +6,11 @@ import {
   RGB_VIS,
 } from "../defaults";
 import {
-  REQUIRED_ASSETS,
   bestEpsgFor,
   observationsOnGrid,
   searchScenes,
   scenesNeedingOffsetCorrection,
+  type AssetKey,
   type Observation,
 } from "../stac/search";
 import {
@@ -18,7 +18,13 @@ import {
   readObservationsBlock,
   type SceneBlock,
 } from "../raster/cog";
-import { buildComposite, type CompositeBlock } from "../raster/composite";
+import {
+  INDEX_BANDS,
+  RGB_EXTRA_BANDS,
+  RGB_OBSERVATION_COUNT,
+  buildComposite,
+  type CompositeBlock,
+} from "../raster/composite";
 import {
   CLOUD_MASKS,
   DEFAULT_MASK_ID,
@@ -169,8 +175,26 @@ export const BLOCK_SIZE = 512;
 
 function assetsFor(maskId: string) {
   const mask = CLOUD_MASKS[maskId] ?? CLOUD_MASKS[DEFAULT_MASK_ID];
-  const wanted = new Set([...REQUIRED_ASSETS, ...mask.requiredAssets]);
-  return { mask, assets: [...wanted] };
+  // Everything the analysis needs, for every observation.
+  const analysis = new Set<AssetKey>([...INDEX_BANDS, ...mask.requiredAssets]);
+  return { mask, assets: [...analysis] };
+}
+
+/**
+ * The observations whose blue and green are worth fetching.
+ *
+ * Chosen by scene-level cloud cover, which is a whole-tile figure and only a
+ * proxy for how clear the sky is over this particular project. It does not
+ * need to be better than that: the picture is for orientation, and a median
+ * over the three least cloudy overpasses is a good picture whether or not
+ * those three were the very best three.
+ */
+function rgbSubsetOf(observations: Observation[]): number[] {
+  return observations
+    .map((observation, index) => ({ index, cloud: observation.cloudCover }))
+    .sort((a, b) => a.cloud - b.cloud)
+    .slice(0, RGB_OBSERVATION_COUNT)
+    .map((entry) => entry.index);
 }
 
 async function compositeForBlock(
@@ -182,12 +206,19 @@ async function compositeForBlock(
   maskOptions: MaskOptions,
   signal?: AbortSignal,
 ): Promise<CompositeBlock> {
+  const rgbSubset = rgbSubsetOf(observations);
+  const wanted = new Set(rgbSubset);
   const blocks: SceneBlock[] = await readObservationsBlock(
     cache,
     observations,
     assets,
     block,
-    { signal },
+    {
+      signal,
+      // Blue and green ride along only for the handful of observations that
+      // will paint the true-colour layers.
+      extraAssets: (index) => (wanted.has(index) ? RGB_EXTRA_BANDS : []),
+    },
   );
   return buildComposite({
     observations,
@@ -195,6 +226,7 @@ async function compositeForBlock(
     mask,
     maskOptions,
     length: block.width * block.height,
+    rgbSubset,
   });
 }
 
@@ -370,12 +402,12 @@ export async function runPeriod(
       if (seen > 0 && seen < MIN_STABLE_SCENE_COUNT) thinPixels += 1;
     }
 
-    scatter(preRgb.red, preComposite.bands.red, block, grid);
-    scatter(preRgb.green, preComposite.bands.green, block, grid);
-    scatter(preRgb.blue, preComposite.bands.blue, block, grid);
-    scatter(postRgb.red, postComposite.bands.red, block, grid);
-    scatter(postRgb.green, postComposite.bands.green, block, grid);
-    scatter(postRgb.blue, postComposite.bands.blue, block, grid);
+    scatter(preRgb.red, preComposite.rgb.red, block, grid);
+    scatter(preRgb.green, preComposite.rgb.green, block, grid);
+    scatter(preRgb.blue, preComposite.rgb.blue, block, grid);
+    scatter(postRgb.red, postComposite.rgb.red, block, grid);
+    scatter(postRgb.green, postComposite.rgb.green, block, grid);
+    scatter(postRgb.blue, postComposite.rgb.blue, block, grid);
   }
 
   report(`${period.id}: drawing layers`, 0.95);

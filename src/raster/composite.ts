@@ -24,10 +24,14 @@ import { combineWater } from "./mask";
 // surviving observations, so thin coverage is visible in the output rather
 // than inferred from the scene list.
 
-/** Reflectance bands, in the order the composite stores them. */
-export const REFLECTANCE_BANDS: AssetKey[] = [
-  "blue",
-  "green",
+/**
+ * The bands the indices are built from.
+ *
+ * NDVI needs red and nir, NDMI needs nir and swir16, NBR needs nir08 and
+ * swir22. Nothing else in the SOP calculation reads a reflectance band, and an
+ * observation counts as valid only if all five are present.
+ */
+export const INDEX_BANDS: AssetKey[] = [
   "red",
   "nir",
   "nir08",
@@ -35,12 +39,48 @@ export const REFLECTANCE_BANDS: AssetKey[] = [
   "swir22",
 ];
 
+/**
+ * The extra bands the true-colour composite needs.
+ *
+ * Blue and green are read for a handful of the clearest observations rather
+ * than for all of them. They contribute to no index, no delta, no class and no
+ * area: their only consumer is the pair of RGB layers a verifier fades between
+ * to confirm by eye what the numbers say. Reading them for sixteen overpasses
+ * when three make a perfectly good picture is most of a fifth of a run's
+ * network traffic spent on something nobody measures.
+ */
+export const RGB_EXTRA_BANDS: AssetKey[] = ["blue", "green"];
+
+/** Every reflectance band the reader may be asked for. */
+export const REFLECTANCE_BANDS: AssetKey[] = [
+  ...INDEX_BANDS,
+  ...RGB_EXTRA_BANDS,
+];
+
+/**
+ * Observations whose blue and green are worth reading.
+ *
+ * Enough for a median to be stable against one bad look, and few enough that
+ * the saving is real.
+ */
+export const RGB_OBSERVATION_COUNT = 3;
+
 /** DN to reflectance, from the SOP defaults. */
 export const SCALE_DIVISOR = S2_SCALE_DIVISOR;
 
 export interface CompositeBlock {
-  /** Scaled surface reflectance, 0 to 1, NaN where no observation survived. */
+  /** Scaled surface reflectance for the index bands, NaN where nothing
+   * survived. */
   bands: Record<AssetKey, Float32Array>;
+  /**
+   * True colour, composited over the clearest few observations only.
+   *
+   * Held apart from `bands` so the difference in provenance is visible in the
+   * type. All three channels come from the same subset, so the colour balance
+   * is consistent; mixing a red median over sixteen looks with a blue median
+   * over three would tint the picture.
+   */
+  rgb: { red: Float32Array; green: Float32Array; blue: Float32Array };
   /** Surviving observations per pixel. */
   counts: Uint16Array;
   /** 1 where the window's surviving observations mostly called the pixel water. */
@@ -82,6 +122,8 @@ export interface CompositeInput {
   mask: CloudMask;
   maskOptions: MaskOptions;
   length: number;
+  /** Indices into `observations` whose blocks carry blue and green. */
+  rgbSubset: number[];
 }
 
 export async function buildComposite(
@@ -120,7 +162,7 @@ export async function buildComposite(
     for (let i = 0; i < length; i += 1) {
       if (!keep[i]) continue;
       let complete = 1;
-      for (const band of REFLECTANCE_BANDS) {
+      for (const band of INDEX_BANDS) {
         if (block[band][i] === NODATA) {
           complete = 0;
           break;
@@ -132,25 +174,43 @@ export async function buildComposite(
     valid.push(ok);
   }
 
-  const bands = {} as Record<AssetKey, Float32Array>;
   const scratch = new Float32Array(Math.max(1, blocks.length));
 
-  for (const band of REFLECTANCE_BANDS) {
+  const medianOver = (band: AssetKey, which: number[]): Float32Array => {
     const out = new Float32Array(length);
     for (let i = 0; i < length; i += 1) {
       let n = 0;
-      for (let s = 0; s < blocks.length; s += 1) {
+      for (const s of which) {
         if (!valid[s][i]) continue;
-        scratch[n] = (blocks[s][band][i] - offsets[s]) / SCALE_DIVISOR;
+        const value = blocks[s][band];
+        if (!value) continue;
+        scratch[n] = (value[i] - offsets[s]) / SCALE_DIVISOR;
         n += 1;
       }
       out[i] = medianOf(scratch, n);
     }
-    bands[band] = out;
+    return out;
+  };
+
+  const all = blocks.map((_, index) => index);
+  const bands = {} as Record<AssetKey, Float32Array>;
+  for (const band of INDEX_BANDS) {
+    bands[band] = medianOver(band, all);
   }
+
+  // The subset falls back to every observation that happens to carry the
+  // bands, so a caller that reads blue and green for all of them still gets a
+  // sensible picture rather than an empty one.
+  const subset = input.rgbSubset.filter((index) => blocks[index]?.blue);
+  const rgbFrom = subset.length > 0 ? subset : all.filter((i) => blocks[i]?.blue);
 
   return {
     bands,
+    rgb: {
+      red: medianOver("red", rgbFrom),
+      green: medianOver("green", rgbFrom),
+      blue: medianOver("blue", rgbFrom),
+    },
     counts,
     water: combineWater(waters, valid, length),
     sceneCount: blocks.length,

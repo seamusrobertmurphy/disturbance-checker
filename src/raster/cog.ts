@@ -26,6 +26,43 @@ import type { AssetKey, Observation, StacScene } from "../stac/search";
 export const NODATA = 0;
 
 /**
+ * The two hostnames that serve the same bucket.
+ *
+ * `sentinel-cogs` answers over HTTP/1.1, and browsers hold about six
+ * connections per host, so a run reading thousands of tiles queues behind that
+ * limit no matter how much concurrency the code asks for. S3 exposes the same
+ * object under a virtual-hosted and a path-style name, both anonymous and both
+ * sending `access-control-allow-origin: *`, and a browser treats them as
+ * separate hosts with separate connection pools.
+ *
+ * Splitting the files across the two therefore doubles the connections
+ * available. It is the same bytes from the same bucket; only the queue changes.
+ */
+const PIXEL_HOSTS = [
+  "https://sentinel-cogs.s3.us-west-2.amazonaws.com/",
+  "https://s3.us-west-2.amazonaws.com/sentinel-cogs/",
+];
+
+/**
+ * Assign a file to a host, stably.
+ *
+ * Stable because the choice must not vary between blocks: geotiff.js caches
+ * the header, the tile index and fetched byte ranges per handle, and a file
+ * that moved hosts between blocks would throw all of that away and re-fetch
+ * from scratch.
+ */
+function shardHref(href: string): string {
+  if (!href.startsWith(PIXEL_HOSTS[0])) return href;
+  const key = href.slice(PIXEL_HOSTS[0].length);
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  }
+  const host = PIXEL_HOSTS[Math.abs(hash) % PIXEL_HOSTS.length];
+  return host + key;
+}
+
+/**
  * Per-run handle cache.
  *
  * Opening a COG costs a round trip for the header and the tile index. A run
@@ -40,10 +77,11 @@ export class CogCache {
   constructor(private readonly signal?: AbortSignal) {}
 
   open(href: string): Promise<GeoTIFF> {
-    let held = this.handles.get(href);
+    const target = shardHref(href);
+    let held = this.handles.get(target);
     if (!held) {
-      held = fromUrl(href, {}, this.signal);
-      this.handles.set(href, held);
+      held = fromUrl(target, {}, this.signal);
+      this.handles.set(target, held);
     }
     return held;
   }
@@ -106,12 +144,12 @@ export type SceneBlock = Record<AssetKey, Float32Array>;
 /**
  * Bound on simultaneous range requests.
  *
- * Browsers cap connections per host at six or so, and a run against a
- * twenty-scene window queues well over a hundred reads. Letting them all go at
- * once does not make them finish sooner, it only makes the progress reporting
+ * Browsers cap connections at roughly six per host, and the pixels are spread
+ * across two hostnames, so about twelve can genuinely be in flight. Asking for
+ * more does not make them finish sooner; it only makes progress reporting
  * useless and the abort path slow.
  */
-export const READ_CONCURRENCY = 6;
+export const READ_CONCURRENCY = 12;
 
 async function pooled<T, R>(
   items: T[],
@@ -204,23 +242,37 @@ export async function readObservationBlock(
   return merged;
 }
 
+export interface ReadManyOptions extends ReadOptions {
+  onScene?: (done: number, total: number) => void;
+  /**
+   * Assets to read for one observation on top of the shared list.
+   *
+   * The true-colour bands are wanted for only a few of the observations in a
+   * window, so the asset list cannot be one list for the whole run. Returning
+   * an empty array, which is the default, reads nothing extra.
+   */
+  extraAssets?: (index: number) => AssetKey[];
+}
+
 /** Read many observations over one block, with a cap on in-flight requests. */
 export async function readObservationsBlock(
   cache: CogCache,
   observations: Observation[],
   assets: AssetKey[],
   block: GridBlock,
-  options: ReadOptions & { onScene?: (done: number, total: number) => void } = {},
+  options: ReadManyOptions = {},
 ): Promise<SceneBlock[]> {
   let done = 0;
   return pooled(
     observations,
-    Math.max(1, Math.floor(READ_CONCURRENCY / 2)),
-    async (observation) => {
+    Math.max(1, Math.floor(READ_CONCURRENCY / 3)),
+    async (observation, index) => {
+      const extra = options.extraAssets?.(index) ?? [];
+      const wanted = extra.length > 0 ? [...assets, ...extra] : assets;
       const result = await readObservationBlock(
         cache,
         observation,
-        assets,
+        wanted,
         block,
         options,
       );
