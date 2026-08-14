@@ -4,24 +4,30 @@ import {
   serviceLayers,
   type ServiceLayer,
 } from "./arcgis";
+import {
+  canadianFires,
+  interagencyFires,
+  withinCanada,
+  type FireRecord,
+} from "./fire";
 
 // Independent records of what happened on the ground.
 //
-// The index maths says a delta moved. It cannot say why, and a verifier is
-// not entitled to assume. These are the two federal datasets that answer the
-// why for most of what a screening flags in the United States: an aerial
-// observer's record of insect and disease damage, and a mapped burn severity
-// assessment for every significant fire.
+// The index maths says a delta moved. It cannot say why, and a verifier is not
+// entitled to assume. This module gathers the registries that answer the why:
+// an aerial observer's record of insect and disease damage, and mapped fire
+// from three registries with different lags and different borders.
 //
 // They corroborate; they are never inputs. Nothing here touches a composite, a
 // delta, a break or an area. A finding that cites them cites them as separate
 // evidence with its own provenance and its own date, which is the whole point
 // of triangulating.
 //
-// Both are United States only. That limit is reported rather than left to be
-// discovered, because an empty result from a survey that never flew reads
-// exactly like an empty result from a forest that was never damaged, and the
-// two mean opposite things.
+// Coverage is reported rather than left to be discovered. An empty result from
+// a survey that never flew reads exactly like an empty result from a forest
+// that was never damaged, and the two mean opposite things. The insect survey
+// is United States only; fire is covered in both the United States and Canada
+// by different registries.
 
 const FS_ARCGIS = "https://apps.fs.usda.gov/arcx/rest/services/EDW";
 
@@ -273,4 +279,104 @@ export function yearsCovered(
     }
   }
   return [...years].sort((a, b) => a - b);
+}
+
+
+// ---------------------------------------------------------------------------
+// Orchestration
+
+export interface Coverage {
+  unitedStates: boolean;
+  canada: boolean;
+  /** True when no registry in this tool covers the area at all. */
+  none: boolean;
+}
+
+export function coverageFor(bbox: [number, number, number, number]): Coverage {
+  const unitedStates = withinUnitedStates(bbox);
+  const canada = withinCanada(bbox);
+  return { unitedStates, canada, none: !unitedStates && !canada };
+}
+
+export interface FireEvidence {
+  records: FireRecord[];
+  perimeters: { type: "FeatureCollection"; features: unknown[] };
+  /** Years MTBS has not yet assessed, so absence proves nothing. */
+  yearsUnassessed: number[];
+  sources: string[];
+}
+
+/**
+ * Every fire registry that covers the area, gathered together.
+ *
+ * Run concurrently and failure-tolerant per source. One registry being down is
+ * a reason to report that registry as unavailable, not to lose the evidence
+ * from the other two, and a verifier needs to know which of the three answered
+ * before drawing a conclusion from silence.
+ */
+export async function fireEvidence(
+  bbox: [number, number, number, number],
+  years: number[],
+  signal?: AbortSignal,
+): Promise<FireEvidence> {
+  const coverage = coverageFor(bbox);
+  const records: FireRecord[] = [];
+  const features: unknown[] = [];
+  const sources: string[] = [];
+  let yearsUnassessed: number[] = [];
+
+  const jobs: Array<Promise<void>> = [];
+
+  if (coverage.unitedStates) {
+    jobs.push(
+      burnedAreas(bbox, years, signal)
+        .then((summary) => {
+          for (const fire of summary.fires) {
+            records.push({
+              source: "MTBS",
+              name: fire.name,
+              year: fire.year,
+              hectares: fire.acres * 0.404686,
+              started: fire.ignition,
+              ended: null,
+              cause: null,
+            });
+          }
+          features.push(...summary.perimeters.features);
+          yearsUnassessed = summary.yearsUnavailable;
+          sources.push("MTBS");
+        })
+        .catch(() => {}),
+    );
+    jobs.push(
+      interagencyFires(bbox, years, signal)
+        .then((found) => {
+          records.push(...found);
+          sources.push("NIFC");
+        })
+        .catch(() => {}),
+    );
+  }
+
+  if (coverage.canada) {
+    jobs.push(
+      canadianFires(bbox, years, signal)
+        .then((found) => {
+          records.push(...found.records);
+          features.push(...found.perimeters);
+          sources.push("NBAC");
+        })
+        .catch(() => {}),
+    );
+  }
+
+  await Promise.all(jobs);
+
+  records.sort((a, b) => b.hectares - a.hectares);
+  return {
+    records,
+    perimeters: { type: "FeatureCollection", features },
+    yearsUnassessed,
+    sources,
+  };
 }

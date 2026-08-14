@@ -129,18 +129,25 @@ export function buildManifest(state: State, runAt: Date): string {
     lines.push(
       `  Queried       ${corroboration.years[0]} to ${corroboration.years[corroboration.years.length - 1]}, over the area of interest`,
     );
-    if (corroboration.mtbs.fires.length === 0) {
+    lines.push(
+      `  Fire registries ${corroboration.fires.sources.join(", ") || "none answered"}`,
+    );
+    if (corroboration.fires.records.length === 0) {
       lines.push("  Fire          no mapped fire intersects this area in these years");
     } else {
-      for (const fire of corroboration.mtbs.fires) {
+      for (const fire of corroboration.fires.records) {
+        const window = [fire.started, fire.ended].filter(Boolean).join(" to ");
         lines.push(
-          `  Fire          ${fire.name} (${fire.year}), ${Math.round(fire.acres).toLocaleString()} acres${fire.ignition ? `, ignited ${fire.ignition}` : ""}`,
+          `  Fire          [${fire.source}] ${fire.name} (${fire.year}), ${formatHectares(fire.hectares)} ha${window ? `, ${window}` : ""}`,
         );
       }
-    }
-    if (corroboration.mtbs.yearsUnavailable.length > 0) {
       lines.push(
-        `  NOT ASSESSED  burn severity is not yet published for ${corroboration.mtbs.yearsUnavailable.join(", ")}; absence is not evidence`,
+        "  Note          one fire may appear under more than one registry. An operational perimeter and a severity assessment measure different things and must not be averaged.",
+      );
+    }
+    if (corroboration.fires.yearsUnassessed.length > 0) {
+      lines.push(
+        `  NOT ASSESSED  burn severity is not yet published for ${corroboration.fires.yearsUnassessed.join(", ")}; absence is not evidence`,
       );
     }
     if (corroboration.ids.groups.length === 0) {
@@ -155,7 +162,9 @@ export function buildManifest(state: State, runAt: Date): string {
         );
       }
     }
-    lines.push("  Sources       MTBS (USGS/USFS); USFS Forest Health Protection IDS");
+    lines.push(
+      "  Sources       MTBS (USGS/USFS); WFIGS (NIFC); NBAC (Canadian Forest Service); USFS Forest Health Protection IDS",
+    );
     lines.push(
       "  Note          corroborating evidence only. No composite, delta, break or area in this report is derived from it.",
     );

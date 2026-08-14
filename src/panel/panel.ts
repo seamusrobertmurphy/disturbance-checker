@@ -19,11 +19,18 @@ import { gridCornersLonLat } from "../raster/grid";
 import {
   IDS_ATTRIBUTION,
   MTBS_ATTRIBUTION,
-  burnedAreas,
+  coverageFor,
+  fireEvidence,
   insectAndDisease,
-  withinUnitedStates,
   yearsCovered,
 } from "../reference/corroborate";
+import { NBAC_ATTRIBUTION, NIFC_ATTRIBUTION } from "../reference/fire";
+import {
+  LCMS_ATTRIBUTION,
+  LCMS_PRODUCTS,
+  exportOverlay,
+  withinConus,
+} from "../reference/lcms";
 import {
   WAYBACK_ATTRIBUTION,
   bracketLooks,
@@ -1485,7 +1492,9 @@ export class DisturbancePanel {
     if (this.state.corroborationStatus === "loading") return "searching";
     if (!held) return "";
     const parts: string[] = [];
-    if (held.mtbs.fires.length > 0) parts.push(`${held.mtbs.fires.length} fires`);
+    if (held.fires.records.length > 0) {
+      parts.push(`${held.fires.records.length} fires`);
+    }
     if (held.ids.groups.length > 0) {
       parts.push(`${Math.round(held.ids.totalAcres).toLocaleString()} ac damage`);
     }
@@ -1512,15 +1521,25 @@ export class DisturbancePanel {
       return body;
     }
 
-    if (!withinUnitedStates(bbox)) {
+    const coverage = coverageFor(bbox);
+    if (coverage.none) {
       body.appendChild(
         this.notice(
           "info",
-          "Outside the surveyed area",
-          "The insect and disease survey and the burn severity assessment are United States programmes. This area is outside both, so there is nothing to query. That is a gap in coverage, not an absence of disturbance, and a finding should not cite either dataset here.",
+          "Outside every registry wired up here",
+          "The fire and forest health registries this tool queries cover the United States and Canada. This area is outside both, so there is nothing to query. That is a gap in coverage, not an absence of disturbance, and a finding must not cite these datasets here.",
         ),
       );
       return body;
+    }
+    if (coverage.canada && !coverage.unitedStates) {
+      body.appendChild(
+        this.notice(
+          "info",
+          "Canadian coverage is fire only",
+          "Mapped fire comes from the National Burned Area Composite, which runs from 1972. There is no Canadian equivalent of the United States aerial insect and disease survey wired up here, so an absence of insect damage below means it was not looked for.",
+        ),
+      );
     }
 
     if (this.state.corroborationStatus === "idle") {
@@ -1561,38 +1580,60 @@ export class DisturbancePanel {
     if (!held) return body;
 
     body.appendChild(
-      el("div", "dc-subhead", `Burn severity, ${held.years[0]} to ${held.years[held.years.length - 1]}`),
+      el(
+        "div",
+        "dc-subhead",
+        `Mapped fire, ${held.years[0]} to ${held.years[held.years.length - 1]}`,
+      ),
     );
-    if (held.mtbs.fires.length === 0) {
+    if (held.fires.records.length === 0) {
       body.appendChild(
-        el("p", "dc-hint", "No mapped fire intersects this area in these years."),
+        el(
+          "p",
+          "dc-hint",
+          `No mapped fire intersects this area in these years, according to ${held.fires.sources.join(", ") || "any registry that answered"}.`,
+        ),
       );
     } else {
-      for (const fire of held.mtbs.fires) {
+      for (const fire of held.fires.records) {
         const row = el("div", "dc-look");
         const head = el("div", "dc-look-head");
         head.appendChild(el("span", "dc-look-date", fire.name));
         head.appendChild(el("span", "dc-look-tag", String(fire.year)));
+        head.appendChild(el("span", "dc-look-tag", fire.source));
         row.appendChild(head);
-        row.appendChild(
-          el(
-            "div",
-            "dc-look-meta",
-            `${Math.round(fire.acres).toLocaleString()} acres${fire.ignition ? ` · ignited ${fire.ignition}` : ""}`,
-          ),
-        );
+        const parts = [
+          `${formatHectares(fire.hectares)} ha`,
+          fire.started ? `from ${fire.started}` : null,
+          fire.ended ? `to ${fire.ended}` : null,
+          fire.cause,
+        ].filter(Boolean);
+        row.appendChild(el("div", "dc-look-meta", parts.join(" · ")));
         body.appendChild(row);
       }
       body.appendChild(
         button("Show perimeters", () => this.showPerimeters(), "secondary"),
       );
+      // The registries disagree by design: an operational perimeter drawn
+      // during a fire is not a severity assessment mapped a year later. Saying
+      // so prevents a verifier averaging two numbers that measure different
+      // things.
+      if (held.fires.sources.length > 1) {
+        body.appendChild(
+          el(
+            "p",
+            "dc-hint",
+            `Answered by ${held.fires.sources.join(", ")}. The same fire may appear more than once with different areas: an operational perimeter mapped during the incident is not the same measurement as a severity assessment mapped a season later. Quote one, and say which.`,
+          ),
+        );
+      }
     }
-    if (held.mtbs.yearsUnavailable.length > 0) {
+    if (held.fires.yearsUnassessed.length > 0) {
       body.appendChild(
         this.notice(
           "warning",
           "Some years are not yet assessed",
-          `Burn severity is mapped from imagery a year or more after a fire, so ${held.mtbs.yearsUnavailable.join(", ")} ${held.mtbs.yearsUnavailable.length === 1 ? "is" : "are"} not published yet. Absence here is not evidence that nothing burned.`,
+          `Burn severity is mapped from imagery a year or more after a fire, so ${held.fires.yearsUnassessed.join(", ")} ${held.fires.yearsUnassessed.length === 1 ? "is" : "are"} not published yet. Absence here is not evidence that nothing burned.`,
         ),
       );
     }
@@ -1624,10 +1665,66 @@ export class DisturbancePanel {
       );
     }
 
-    body.appendChild(
-      el("p", "dc-hint", `${MTBS_ATTRIBUTION}. ${IDS_ATTRIBUTION}.`),
-    );
+    if (withinConus(bbox)) {
+      body.appendChild(el("div", "dc-subhead", "Independent change model"));
+      body.appendChild(
+        el(
+          "p",
+          "dc-hint",
+          "The Landscape Change Monitoring System classifies change annually across the conterminous states from the full Landsat and Sentinel-2 record, by a method unlike this tool's. Agreement is corroboration; disagreement is the finding.",
+        ),
+      );
+      const row = el("div", "dc-row");
+      for (const product of LCMS_PRODUCTS) {
+        row.appendChild(
+          button(
+            product.label,
+            () => void this.showLcms(product.id),
+            "secondary",
+          ),
+        );
+      }
+      body.appendChild(row);
+    }
+
+    const attributions = [
+      MTBS_ATTRIBUTION,
+      held.fires.sources.includes("NIFC") ? NIFC_ATTRIBUTION : null,
+      held.fires.sources.includes("NBAC") ? NBAC_ATTRIBUTION : null,
+      held.ids.covered ? IDS_ATTRIBUTION : null,
+      withinConus(bbox) ? LCMS_ATTRIBUTION : null,
+    ].filter(Boolean);
+    body.appendChild(el("p", "dc-hint", `${attributions.join(". ")}.`));
     return body;
+  }
+
+  /**
+   * Draw an LCMS product over the working grid.
+   *
+   * The year shown is the post window's, because that is the year the delta
+   * attributes a change to and therefore the only year the two methods can be
+   * compared on.
+   */
+  private async showLcms(productId: string): Promise<void> {
+    const result = this.state.results[0];
+    const period = this.state.periods[0];
+    const product = LCMS_PRODUCTS.find((entry) => entry.id === productId);
+    if (!result || !period || !product) return;
+
+    const year = Number(period.postEnd.slice(0, 4));
+    try {
+      const overlay = await exportOverlay({ product, year, grid: result.grid });
+      this.layers.addRaster({
+        key: "ref-lcms",
+        name: `LCMS ${product.label}, ${year}`,
+        dataUrl: overlay.url,
+        coordinates: overlay.coordinates,
+        visible: true,
+        opacity: 0.75,
+      });
+    } catch (error) {
+      this.patch({ error: describeError(error) });
+    }
   }
 
   private aoiBbox(): [number, number, number, number] | null {
@@ -1645,12 +1742,12 @@ export class DisturbancePanel {
 
     this.patch({ corroborationStatus: "loading", corroborationError: null });
     try {
-      const [ids, mtbs] = await Promise.all([
+      const [ids, fires] = await Promise.all([
         insectAndDisease(bbox, years),
-        burnedAreas(bbox, years),
+        fireEvidence(bbox, years),
       ]);
       this.patch({
-        corroboration: { ids, mtbs, years, fetchedAt: Date.now() },
+        corroboration: { ids, fires, years, fetchedAt: Date.now() },
         corroborationStatus: "ready",
         corroborationError: null,
       });
@@ -1664,11 +1761,11 @@ export class DisturbancePanel {
 
   private showPerimeters(): void {
     const held = this.state.corroboration;
-    if (!held || held.mtbs.perimeters.features.length === 0) return;
+    if (!held || held.fires.perimeters.features.length === 0) return;
     this.layers.addVector({
-      key: "ref-mtbs",
+      key: "ref-fire",
       name: "Mapped fire perimeters",
-      geojson: held.mtbs.perimeters,
+      geojson: held.fires.perimeters,
       role: "fire",
       labelField: null,
       color: "#d7301f",

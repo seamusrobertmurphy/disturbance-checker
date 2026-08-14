@@ -14,7 +14,7 @@ import {
   type MaskOptions,
 } from "./raster/mask";
 import type { Look } from "./reference/wayback";
-import type { IdsSummary, MtbsSummary } from "./reference/corroborate";
+import type { FireEvidence, IdsSummary } from "./reference/corroborate";
 
 export type RunStatus =
   | "idle"
@@ -104,7 +104,7 @@ export interface State {
 
 export interface Corroboration {
   ids: IdsSummary;
-  mtbs: MtbsSummary;
+  fires: FireEvidence;
   years: number[];
   fetchedAt: number;
 }
