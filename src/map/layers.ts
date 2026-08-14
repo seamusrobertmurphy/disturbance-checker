@@ -327,15 +327,23 @@ export class MapLayerManager {
 
         if (options.role === "plots") {
           const circleId = `${id}-circle`;
+          // Plots are orientation, not evidence. They exist so a screenshot
+          // of a disturbance polygon can be tied to a plot number, and a
+          // marker heavy enough to sit on top of the classified raster
+          // obscures the thing being screenshotted. Small, semi-transparent
+          // and a hairline stroke: findable when looked for, invisible when
+          // not.
           map.addLayer({
             id: circleId,
             type: "circle",
             source: sourceId,
             paint: {
-              "circle-radius": 5,
+              "circle-radius": 3,
               "circle-color": options.color,
+              "circle-opacity": 0.65,
               "circle-stroke-color": "#ffffff",
-              "circle-stroke-width": 1.5,
+              "circle-stroke-width": 0.75,
+              "circle-stroke-opacity": 0.7,
             },
           });
           nativeLayerIds.push(circleId);
@@ -348,9 +356,9 @@ export class MapLayerManager {
               source: sourceId,
               layout: {
                 "text-field": ["to-string", ["get", options.labelField]],
-                "text-size": 12,
+                "text-size": 10,
                 "text-anchor": "top",
-                "text-offset": [0, 0.7],
+                "text-offset": [0, 0.8],
                 // Plot identifiers must stay readable when points cluster, so
                 // collision hiding is disabled deliberately.
                 "text-allow-overlap": true,
@@ -358,8 +366,9 @@ export class MapLayerManager {
               },
               paint: {
                 "text-color": "#ffffff",
+                "text-opacity": 0.8,
                 "text-halo-color": "#000000",
-                "text-halo-width": 1.6,
+                "text-halo-width": 1.4,
               },
             });
             nativeLayerIds.push(labelId);

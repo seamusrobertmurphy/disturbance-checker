@@ -106,13 +106,57 @@ jobs:
       # Both are defaults, not impositions. An explicit ?theme=light or
       # ?project=... still wins, and the in-app controls are untouched.
       - name: Open dark, with the plugin already switched on
+        env:
+          # The published origin, so URLs written into the startup project are
+          # absolute. A relative basemap URL would be resolved against whatever
+          # the caller passed as ?project=, which is not necessarily this site.
+          PAGES_ORIGIN: https://${{ github.repository_owner }}.github.io
+          PAGES_BASE: /${{ github.event.repository.name }}/
         run: |
           python3 - <<'PYTHON'
           import json
+          import os
           from pathlib import Path
 
           dist = Path("geolibre/apps/geolibre-desktop/dist")
           plugin_id = "tuvsud-disturbance-check"
+          site = os.environ["PAGES_ORIGIN"].rstrip("/") + os.environ["PAGES_BASE"]
+
+          # A satellite basemap, not a road map. Every layer this tool draws is
+          # evidence about vegetation, and a cartographic basemap gives a
+          # verifier nothing to check it against. Imagery does: a classified
+          # cell either sits on a cutblock or it does not.
+          #
+          # Esri World Imagery is anonymous, sends CORS, and is the same
+          # archive the dated Wayback timeline in section 7 steps through, so
+          # the basemap and the timeline agree on what the ground looks like.
+          satellite = {
+              "version": 8,
+              "sources": {
+                  "esri-world-imagery": {
+                      "type": "raster",
+                      "tiles": [
+                          "https://services.arcgisonline.com/ArcGIS/rest/services"
+                          "/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                      ],
+                      "tileSize": 256,
+                      "maxzoom": 19,
+                      "attribution": (
+                          "Esri, Maxar, Earthstar Geographics, and the GIS User "
+                          "Community"
+                      ),
+                  }
+              },
+              "layers": [
+                  {
+                      "id": "esri-world-imagery",
+                      "type": "raster",
+                      "source": "esri-world-imagery",
+                  }
+              ],
+          }
+          style = dist / "satellite-basemap.json"
+          style.write_text(json.dumps(satellite, indent=2) + "\n")
 
           project = {
               "version": "1.0.0",
@@ -123,6 +167,7 @@ jobs:
                   "bearing": 0,
                   "pitch": 0,
               },
+              "basemapStyleUrl": f"{site}satellite-basemap.json",
               "layers": [],
               "styles": {},
               "plugins": {
