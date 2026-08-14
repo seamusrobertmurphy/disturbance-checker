@@ -2076,8 +2076,6 @@ export class DisturbancePanel {
     const created: string[] = [];
     const order: Array<PeriodResult["layers"][number]["role"]> = [
       "rgb",
-      "index",
-      "continuous",
       "classified",
     ];
 

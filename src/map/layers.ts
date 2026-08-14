@@ -376,19 +376,25 @@ export class MapLayerManager {
         } else {
           const fillId = `${id}-fill`;
           const lineId = `${id}-line`;
-          map.addLayer({
-            id: fillId,
-            type: "fill",
-            source: sourceId,
-            paint: {
-              "fill-color": options.color,
-              // A fire perimeter is evidence to read the analysis against, so
-              // it is drawn heavier than a context outline but still light
-              // enough to see the classified raster through.
-              "fill-opacity":
-                options.role === "smz" ? 0.18 : options.role === "fire" ? 0.22 : 0.04,
-            },
-          });
+          // The project boundary is drawn as an outline and nothing else.
+          // A wash over the whole project, however faint, sits between the
+          // verifier and every classified cell inside it, which is the entire
+          // area they are there to look at. Zones and fire perimeters keep a
+          // fill because they are read as areas rather than looked through.
+          if (options.role !== "boundary") {
+            map.addLayer({
+              id: fillId,
+              type: "fill",
+              source: sourceId,
+              paint: {
+                "fill-color": options.color,
+                // A fire perimeter is evidence to read the analysis against,
+                // so it is drawn heavier than a context outline but still
+                // light enough to see the classified raster through.
+                "fill-opacity": options.role === "smz" ? 0.18 : 0.22,
+              },
+            });
+          }
           map.addLayer({
             id: lineId,
             type: "line",
@@ -400,7 +406,8 @@ export class MapLayerManager {
                 options.role === "smz" ? [3, 2] : options.role === "fire" ? [4, 2] : [1, 0],
             },
           });
-          nativeLayerIds.push(fillId, lineId);
+          if (options.role !== "boundary") nativeLayerIds.push(fillId);
+          nativeLayerIds.push(lineId);
         }
       } catch {
         return;

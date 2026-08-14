@@ -1,13 +1,8 @@
 import {
   Breaks,
   CLASS_PALETTES,
-  CONTINUOUS_MAX,
-  CONTINUOUS_MIN,
-  CONTINUOUS_PALETTE,
   DeltaId,
   MIN_STABLE_SCENE_COUNT,
-  NDMI_VIS,
-  NDVI_VIS,
   RGB_VIS,
 } from "../defaults";
 import {
@@ -49,12 +44,10 @@ import {
   classifyDelta,
   computeDeltas,
   emptyHistogram,
-  indices,
 } from "./deltas";
 import {
   buildWarp,
   paintClassified,
-  paintContinuous,
   paintRgb,
   toDataUrl,
   warpCoordinates,
@@ -118,8 +111,19 @@ export interface RunParams {
   onProgress?: (message: string, fraction?: number) => void;
 }
 
-/** What a layer is, so the panel can stack them in the SOP's order. */
-export type LayerRole = "rgb" | "index" | "continuous" | "classified";
+/**
+ * What a layer is, so the panel can stack them in the SOP's order.
+ *
+ * The continuous deltas and the four single-date index layers used to be built
+ * too, hidden, for the cross-check in SOP Appendix A.2 and A.3. They are gone.
+ * Nobody switched them on, and each cost a full-extent Float32Array held for
+ * the whole run plus a PNG encode at the end: on a seventy-block area that is
+ * roughly half a gigabyte of memory and seven images, spent on layers that
+ * were never looked at. The histogram, which is what the appendix cross-check
+ * actually reads, is accumulated from the delta arrays block by block and is
+ * unaffected.
+ */
+export type LayerRole = "rgb" | "classified";
 
 export interface PaintedLayer {
   key: string;
@@ -135,7 +139,6 @@ export interface DeltaResult {
   histogram: HistogramBin[];
   areasHa: [number, number, number];
   classifiedKey: string;
-  continuousKey: string;
 }
 
 export interface PeriodResult {
@@ -316,17 +319,8 @@ export async function runPeriod(
     dNDMI: new Uint8Array(total).fill(CLASS_NODATA),
     dNBR: new Uint8Array(total).fill(CLASS_NODATA),
   };
-  const continuous: Record<DeltaId, Float32Array> = {
-    dNDVI: new Float32Array(total).fill(Number.NaN),
-    dNDMI: new Float32Array(total).fill(Number.NaN),
-    dNBR: new Float32Array(total).fill(Number.NaN),
-  };
   const preRgb = allocateBands(total);
   const postRgb = allocateBands(total);
-  const preNdvi = new Float32Array(total).fill(Number.NaN);
-  const postNdvi = new Float32Array(total).fill(Number.NaN);
-  const preNdmi = new Float32Array(total).fill(Number.NaN);
-  const postNdmi = new Float32Array(total).fill(Number.NaN);
 
   let observedPixels = 0;
   let thinPixels = 0;
@@ -345,8 +339,6 @@ export async function runPeriod(
     ]);
 
     const deltas = computeDeltas(preComposite, postComposite);
-    const preIdx = indices(preComposite);
-    const postIdx = indices(postComposite);
 
     // Clip before anything is tallied, so the histogram, the class areas and
     // the observed-pixel count all describe the same polygon.
@@ -370,7 +362,6 @@ export async function runPeriod(
       const blockClasses = classifyDelta(deltas[id], params.breaks[id]);
       accumulateClassCounts(counts[id], blockClasses);
       scatter(classified[id], blockClasses, block, grid);
-      scatter(continuous[id], deltas[id], block, grid);
     }
 
     for (let i = 0; i < preComposite.length; i += 1) {
@@ -385,10 +376,6 @@ export async function runPeriod(
     scatter(postRgb.red, postComposite.bands.red, block, grid);
     scatter(postRgb.green, postComposite.bands.green, block, grid);
     scatter(postRgb.blue, postComposite.bands.blue, block, grid);
-    scatter(preNdvi, preIdx.ndvi, block, grid);
-    scatter(postNdvi, postIdx.ndvi, block, grid);
-    scatter(preNdmi, preIdx.ndmi, block, grid);
-    scatter(postNdmi, postIdx.ndmi, block, grid);
   }
 
   report(`${period.id}: drawing layers`, 0.95);
@@ -425,52 +412,10 @@ export async function runPeriod(
     paintRgb(postRgb.red, postRgb.green, postRgb.blue, RGB_VIS, warp),
     false,
   );
-  push(
-    `${period.id}-pre-ndvi`,
-    "Pre NDVI",
-    "index",
-    paintContinuous(preNdvi, NDVI_VIS.palette, NDVI_VIS.min, NDVI_VIS.max, warp),
-    false,
-  );
-  push(
-    `${period.id}-post-ndvi`,
-    "Post NDVI",
-    "index",
-    paintContinuous(postNdvi, NDVI_VIS.palette, NDVI_VIS.min, NDVI_VIS.max, warp),
-    false,
-  );
-  push(
-    `${period.id}-pre-ndmi`,
-    "Pre NDMI",
-    "index",
-    paintContinuous(preNdmi, NDMI_VIS.palette, NDMI_VIS.min, NDMI_VIS.max, warp),
-    false,
-  );
-  push(
-    `${period.id}-post-ndmi`,
-    "Post NDMI",
-    "index",
-    paintContinuous(postNdmi, NDMI_VIS.palette, NDMI_VIS.min, NDMI_VIS.max, warp),
-    false,
-  );
 
   const deltaResults = {} as Record<DeltaId, DeltaResult>;
   for (const id of DELTA_IDS) {
     const classifiedKey = `${period.id}-${id}-class`;
-    const continuousKey = `${period.id}-${id}-cont`;
-    push(
-      continuousKey,
-      `${id} continuous`,
-      "continuous",
-      paintContinuous(
-        continuous[id],
-        CONTINUOUS_PALETTE,
-        CONTINUOUS_MIN,
-        CONTINUOUS_MAX,
-        warp,
-      ),
-      false,
-    );
     push(
       classifiedKey,
       `${id} classified`,
@@ -483,7 +428,6 @@ export async function runPeriod(
       histogram: histograms[id],
       areasHa: classAreasHa(counts[id], pixelHa),
       classifiedKey,
-      continuousKey,
     };
   }
 
