@@ -84,39 +84,85 @@ jobs:
           fi
           echo "Plugin present: $(du -h "$out" | cut -f1)"
 
-      # GeoLibre decides its theme from ?theme= first and the operating system
-      # preference second, and persists nothing. Verifiers read classified
-      # rasters and true-colour composites against the map all day, so the
-      # deployment defaults to dark rather than inheriting whatever each
-      # colleague's laptop happens to be set to. An explicit ?theme=light still
-      # wins, and the in-app toggle is untouched.
+      # Two things every colleague should get without touching a control.
       #
-      # The snippet is a classic inline script in the head, so it runs during
-      # parsing and lands before the deferred module bundle reads the query
-      # string.
-      - name: Default the deployed app to dark mode
+      # Theme: GeoLibre reads ?theme= first and the operating system preference
+      # second, and persists nothing. Verifiers read classified rasters against
+      # the map all day, so the deployment defaults to dark rather than
+      # inheriting whatever each laptop is set to.
+      #
+      # Activation: a plugin dropped into public/plugins is always *loaded*,
+      # but loading is not activating, and v1.9.0 refuses activeByDefault on
+      # external plugins outright ("External plugins cannot use
+      # activeByDefault"). Until now that left every visitor to find the
+      # Plugins menu themselves, and a colleague who cleared their site data
+      # silently lost the panel with no way of knowing why.
+      #
+      # A project file is the supported route: GeoLibre loads one from ?project=
+      # and honours its plugins.activePluginIds. So the deploy ships a minimal
+      # startup project that switches this plugin on, and the snippet points at
+      # it when the visitor asked for no other project.
+      #
+      # Both are defaults, not impositions. An explicit ?theme=light or
+      # ?project=... still wins, and the in-app controls are untouched.
+      - name: Open dark, with the plugin already switched on
         run: |
           python3 - <<'PYTHON'
+          import json
           from pathlib import Path
 
-          page = Path("geolibre/apps/geolibre-desktop/dist/index.html")
-          html = page.read_text()
+          dist = Path("geolibre/apps/geolibre-desktop/dist")
+          plugin_id = "tuvsud-disturbance-check"
+
+          project = {
+              "version": "1.0.0",
+              "name": "Disturbance Check",
+              "mapView": {
+                  "center": [-98.5, 39.8],
+                  "zoom": 3,
+                  "bearing": 0,
+                  "pitch": 0,
+              },
+              "layers": [],
+              "styles": {},
+              "plugins": {
+                  "manifestUrls": [],
+                  "activePluginIds": [plugin_id],
+                  "mapControlPositions": {},
+                  "settings": {},
+              },
+          }
+          startup = dist / "disturbance-check.geolibre.json"
+          startup.write_text(json.dumps(project, indent=2) + "\n")
+
           snippet = (
               "<script>(function(){"
               "var u=new URL(window.location.href);"
+              "var changed=false;"
               "if(!u.searchParams.has('theme')){"
               "u.searchParams.set('theme','dark');"
-              "window.history.replaceState(null,'',u);"
               "document.documentElement.classList.add('dark');"
               "document.documentElement.style.colorScheme='dark';"
-              "}})();</script>"
+              "changed=true;}"
+              "var hasProject=['url','project','projectUrl','project_url']"
+              ".some(function(k){return u.searchParams.has(k);});"
+              "if(!hasProject&&!/^\\?https?:/i.test(u.search)){"
+              "u.searchParams.set('project',"
+              "new URL('disturbance-check.geolibre.json',"
+              "document.baseURI).href);"
+              "changed=true;}"
+              "if(changed){window.history.replaceState(null,'',u);}"
+              "})();</script>"
           )
-          if "searchParams.set('theme','dark')" in html:
-              raise SystemExit("the dark-mode snippet is already present")
+
+          page = dist / "index.html"
+          html = page.read_text()
+          if "disturbance-check.geolibre.json" in html:
+              raise SystemExit("the startup snippet is already present")
           if "<head>" not in html:
               raise SystemExit("no <head> in the built index.html")
           page.write_text(html.replace("<head>", "<head>" + snippet, 1))
-          print("dark mode default injected")
+          print("startup project written and snippet injected")
           PYTHON
 
       - name: Disable Jekyll processing
