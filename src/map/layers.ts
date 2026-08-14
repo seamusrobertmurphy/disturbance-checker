@@ -46,6 +46,32 @@ export class MapLayerManager {
     return map.isStyleLoaded ? map.isStyleLoaded() : true;
   }
 
+  /**
+   * Whether a source and layer really landed on the map.
+   *
+   * The Layer panel is driven by what this manager registers, so registering
+   * something MapLibre silently refused makes the panel lie. Checking is two
+   * lookups and it turns an invisible failure into a visible one.
+   */
+  private settled(
+    map: MapLibreLike,
+    sourceId: string,
+    layerId: string,
+  ): boolean {
+    try {
+      if (map.getSource(sourceId) && map.getLayer(layerId)) return true;
+    } catch {
+      // Fall through to the cleanup below.
+    }
+    try {
+      if (map.getLayer(layerId)) map.removeLayer(layerId);
+      if (map.getSource(sourceId)) map.removeSource(sourceId);
+    } catch {
+      // Nothing more to do; the style rejected it.
+    }
+    return false;
+  }
+
   /** Remove every layer this plugin created whose id starts with the prefix. */
   removeByPrefix(prefix: string): void {
     for (const id of [...this.managed.keys()]) {
@@ -113,12 +139,17 @@ export class MapLayerManager {
 
     const draw = () => {
       try {
+        // An image source takes a url and four corners and nothing else.
+        // MapLibre validates the style before it builds the source, so an
+        // extra property is not ignored: the source is rejected outright and
+        // every layer that names it then fails with "source not found". An
+        // `attribution` here cost twelve invisible layers. Attribution for
+        // this imagery lives in the run manifest, which is where a finding
+        // cites it from anyway.
         map.addSource(sourceId, {
           type: "image",
           url: options.dataUrl,
           coordinates: options.coordinates,
-          attribution:
-            "Copernicus Sentinel-2, processed by ESA, COGs by Element 84 on AWS Open Data",
         });
         map.addLayer({
           id: layerId,
@@ -130,6 +161,14 @@ export class MapLayerManager {
       } catch {
         return;
       }
+
+      // MapLibre reports a rejected source through an error event rather than
+      // by throwing, so the try above catches nothing and the layer is left
+      // naming a source that was never built. Registering it anyway would put
+      // a row in the Layer panel for something that does not exist on the map,
+      // which is how twelve invisible layers looked like a rendering problem
+      // instead of a style error.
+      if (!this.settled(map, sourceId, layerId)) return;
 
       this.managed.set(id, {
         id,
@@ -200,6 +239,8 @@ export class MapLayerManager {
       } catch {
         return;
       }
+
+      if (!this.settled(map, sourceId, layerId)) return;
 
       this.managed.set(id, {
         id,
