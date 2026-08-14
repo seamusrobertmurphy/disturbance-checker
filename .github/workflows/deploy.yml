@@ -84,6 +84,41 @@ jobs:
           fi
           echo "Plugin present: $(du -h "$out" | cut -f1)"
 
+      # GeoLibre decides its theme from ?theme= first and the operating system
+      # preference second, and persists nothing. Verifiers read classified
+      # rasters and true-colour composites against the map all day, so the
+      # deployment defaults to dark rather than inheriting whatever each
+      # colleague's laptop happens to be set to. An explicit ?theme=light still
+      # wins, and the in-app toggle is untouched.
+      #
+      # The snippet is a classic inline script in the head, so it runs during
+      # parsing and lands before the deferred module bundle reads the query
+      # string.
+      - name: Default the deployed app to dark mode
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+
+          page = Path("geolibre/apps/geolibre-desktop/dist/index.html")
+          html = page.read_text()
+          snippet = (
+              "<script>(function(){"
+              "var u=new URL(window.location.href);"
+              "if(!u.searchParams.has('theme')){"
+              "u.searchParams.set('theme','dark');"
+              "window.history.replaceState(null,'',u);"
+              "document.documentElement.classList.add('dark');"
+              "document.documentElement.style.colorScheme='dark';"
+              "}})();</script>"
+          )
+          if "searchParams.set('theme','dark')" in html:
+              raise SystemExit("the dark-mode snippet is already present")
+          if "<head>" not in html:
+              raise SystemExit("no <head> in the built index.html")
+          page.write_text(html.replace("<head>", "<head>" + snippet, 1))
+          print("dark mode default injected")
+          PYTHON
+
       - name: Disable Jekyll processing
         run: touch geolibre/apps/geolibre-desktop/dist/.nojekyll
 

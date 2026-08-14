@@ -22,8 +22,17 @@ import {
   coverageFor,
   fireEvidence,
   insectAndDisease,
+  managementRecord,
   yearsCovered,
 } from "../reference/corroborate";
+import { FACTS_ATTRIBUTION } from "../reference/management";
+import {
+  LANDFIRE_ATTRIBUTION,
+  loadCatalogue,
+  overlayFor,
+  regionFor,
+  serviceFor,
+} from "../reference/landfire";
 import { NBAC_ATTRIBUTION, NIFC_ATTRIBUTION } from "../reference/fire";
 import {
   LCMS_ATTRIBUTION,
@@ -83,6 +92,9 @@ const CONTEXT_META: Record<
 export class DisturbancePanel {
   private container: HTMLElement | null = null;
   private clockTimer: number | null = null;
+  /** Held outside state because it is a cosmetic consequence of drawing a
+   * layer, not a parameter of the run. */
+  private landfireLegend: Array<{ label: string; swatch: string }> = [];
   private open: Set<string>;
   private readonly layers: MapLayerManager;
 
@@ -1638,6 +1650,55 @@ export class DisturbancePanel {
       );
     }
 
+    const management = held.management;
+    if (management) {
+      body.appendChild(el("div", "dc-subhead", "Recorded management"));
+      if (management.activities.length === 0) {
+        body.appendChild(
+          el(
+            "p",
+            "dc-hint",
+            "No canopy-affecting activity is recorded over this area in these years. The activity tracking system covers National Forest System land only, so on private or state ownership this is an absence of jurisdiction rather than an absence of harvest.",
+          ),
+        );
+      } else {
+        const table = el("div", "dc-damage");
+        for (const activity of management.activities.slice(0, 12)) {
+          const row = el("div", "dc-damage-row");
+          row.appendChild(
+            el("span", "dc-damage-year", (activity.completed ?? "").slice(0, 4)),
+          );
+          row.appendChild(el("span", "dc-damage-agent", activity.activity));
+          row.appendChild(el("span", "dc-damage-type", activity.completed ?? ""));
+          row.appendChild(
+            el(
+              "span",
+              "dc-damage-acres",
+              `${Math.round(activity.acres).toLocaleString()} ac`,
+            ),
+          );
+          table.appendChild(row);
+        }
+        body.appendChild(table);
+        body.appendChild(
+          el(
+            "p",
+            "dc-hint",
+            `${Math.round(management.totalAcres).toLocaleString()} acres of recorded canopy-affecting activity. This is the record of what was done, entered by whoever did it, not a measurement of the canopy. A delta over a stand recorded as harvested is a reported treatment behaving as it should; the same delta with no record here is the finding.`,
+          ),
+        );
+      }
+      if (management.undated > 0) {
+        body.appendChild(
+          this.notice(
+            "warning",
+            "Activities with no completion date",
+            `${management.undated} canopy-affecting record(s) over this area were entered without a completion date and could not be placed in a year. An activity entered but never closed out is a treatment of unknown status, not an absent one.`,
+          ),
+        );
+      }
+    }
+
     body.appendChild(el("div", "dc-subhead", "Insect and disease survey"));
     if (held.ids.groups.length === 0) {
       body.appendChild(
@@ -1687,8 +1748,43 @@ export class DisturbancePanel {
       body.appendChild(row);
     }
 
+    if (regionFor(bbox)) {
+      body.appendChild(el("div", "dc-subhead", "Disturbance cause"));
+      body.appendChild(
+        el(
+          "p",
+          "dc-hint",
+          "LANDFIRE names the agent rather than the rate: fire, clearcut, harvest, thinning, mastication, insects, disease, weather and development are separate classes. Where it and LCMS agree on a stand, two teams working from overlapping inputs reached the same answer. Where they disagree, that is what to chase.",
+        ),
+      );
+      body.appendChild(
+        button(
+          "Show disturbance cause",
+          () => void this.showLandfire(),
+          "secondary",
+        ),
+      );
+      const legend = this.landfireLegend;
+      if (legend.length > 0) {
+        const box = el("div", "dc-legend");
+        for (const entry of legend) {
+          const item = el("div", "dc-legend-item");
+          const swatch = document.createElement("img");
+          swatch.src = entry.swatch;
+          swatch.className = "dc-legend-swatch";
+          swatch.alt = "";
+          item.appendChild(swatch);
+          item.appendChild(el("span", "dc-legend-label", entry.label));
+          box.appendChild(item);
+        }
+        body.appendChild(box);
+      }
+    }
+
     const attributions = [
       MTBS_ATTRIBUTION,
+      management ? FACTS_ATTRIBUTION : null,
+      regionFor(bbox) ? LANDFIRE_ATTRIBUTION : null,
       held.fires.sources.includes("NIFC") ? NIFC_ATTRIBUTION : null,
       held.fires.sources.includes("NBAC") ? NBAC_ATTRIBUTION : null,
       held.ids.covered ? IDS_ATTRIBUTION : null,
@@ -1705,6 +1801,46 @@ export class DisturbancePanel {
    * attributes a change to and therefore the only year the two methods can be
    * compared on.
    */
+  /**
+   * Draw LANDFIRE's disturbance classes for the post window's year.
+   *
+   * The year is not negotiable here in the way it is for a basemap. LANDFIRE
+   * publishes one raster per disturbance year, so showing any year but the one
+   * the delta attributes its change to would be comparing different questions.
+   */
+  private async showLandfire(): Promise<void> {
+    const result = this.state.results[0];
+    const period = this.state.periods[0];
+    const bbox = this.aoiBbox();
+    const region = bbox ? regionFor(bbox) : null;
+    if (!result || !period || !region) return;
+
+    const year = Number(period.postEnd.slice(0, 4));
+    try {
+      const catalogue = await loadCatalogue();
+      const service = serviceFor(catalogue, year, region);
+      if (!service) {
+        this.patch({
+          error: `LANDFIRE has not published a ${year} disturbance product for this region yet. It lags the calendar by a year or more, and an absent product is not an absence of disturbance.`,
+        });
+        return;
+      }
+      const overlay = await overlayFor(result.grid, service);
+      this.landfireLegend = overlay.legend;
+      this.layers.addRaster({
+        key: "ref-landfire",
+        name: `LANDFIRE disturbance, ${service.year}`,
+        dataUrl: overlay.url,
+        coordinates: overlay.coordinates,
+        visible: true,
+        opacity: 0.8,
+      });
+      this.rerender();
+    } catch (error) {
+      this.patch({ error: describeError(error) });
+    }
+  }
+
   private async showLcms(productId: string): Promise<void> {
     const result = this.state.results[0];
     const period = this.state.periods[0];
@@ -1742,12 +1878,13 @@ export class DisturbancePanel {
 
     this.patch({ corroborationStatus: "loading", corroborationError: null });
     try {
-      const [ids, fires] = await Promise.all([
+      const [ids, fires, management] = await Promise.all([
         insectAndDisease(bbox, years),
         fireEvidence(bbox, years),
+        managementRecord(bbox, years),
       ]);
       this.patch({
-        corroboration: { ids, fires, years, fetchedAt: Date.now() },
+        corroboration: { ids, fires, management, years, fetchedAt: Date.now() },
         corroborationStatus: "ready",
         corroborationError: null,
       });

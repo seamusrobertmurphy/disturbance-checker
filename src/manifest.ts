@@ -162,8 +162,30 @@ export function buildManifest(state: State, runAt: Date): string {
         );
       }
     }
+    const management = corroboration.management;
+    if (management) {
+      if (management.activities.length === 0) {
+        lines.push(
+          "  Management    no canopy-affecting activity recorded; National Forest System land only, so absence may be jurisdictional",
+        );
+      } else {
+        lines.push(
+          `  Management    ${Math.round(management.totalAcres).toLocaleString()} acres of recorded canopy-affecting activity`,
+        );
+        for (const activity of management.activities.slice(0, 10)) {
+          lines.push(
+            `    ${activity.completed}  ${activity.activity}, ${Math.round(activity.acres).toLocaleString()} acres`,
+          );
+        }
+      }
+      if (management.undated > 0) {
+        lines.push(
+          `  UNDATED       ${management.undated} activity record(s) carry no completion date and could not be placed in a year`,
+        );
+      }
+    }
     lines.push(
-      "  Sources       MTBS (USGS/USFS); WFIGS (NIFC); NBAC (Canadian Forest Service); USFS Forest Health Protection IDS",
+      "  Sources       MTBS (USGS/USFS); WFIGS (NIFC); NBAC (Canadian Forest Service); USFS Forest Health Protection IDS; USFS FACTS; LANDFIRE",
     );
     lines.push(
       "  Note          corroborating evidence only. No composite, delta, break or area in this report is derived from it.",

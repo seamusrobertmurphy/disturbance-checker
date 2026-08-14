@@ -134,3 +134,93 @@ export async function queryGeoJson(
   };
   return { type: "FeatureCollection", features: payload.features ?? [] };
 }
+
+
+// ---------------------------------------------------------------------------
+// Image services
+
+export interface OverlayRequest {
+  serviceUrl: string;
+  /** Bounds in the target CRS, [minX, minY, maxX, maxY]. */
+  bbox: [number, number, number, number];
+  /** EPSG code of both the request bounds and the returned image. */
+  epsg: number;
+  width: number;
+  height: number;
+  /** Instant in epoch milliseconds, for time-enabled mosaics. */
+  time?: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * Export an image service over a footprint, as a blob URL.
+ *
+ * The image is requested in the working grid's own UTM zone rather than Web
+ * Mercator, so it lands on the same footprint as the analysis and can be
+ * compared by eye pixel for pixel. Asking for Mercator would rotate it against
+ * every other layer on the map.
+ */
+export async function exportImageOverlay(
+  request: OverlayRequest,
+): Promise<{ url: string; release: () => void }> {
+  const params = new URLSearchParams({
+    bbox: request.bbox.join(","),
+    bboxSR: String(request.epsg),
+    imageSR: String(request.epsg),
+    size: `${request.width},${request.height}`,
+    format: "png32",
+    f: "image",
+  });
+  if (request.time !== undefined) params.set("time", String(request.time));
+
+  const response = await fetch(
+    `${request.serviceUrl}/exportImage?${params}`,
+    { signal: request.signal },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `The image service returned ${response.status}. The overlay is unavailable; the analysis is unaffected.`,
+    );
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  // Blob URLs outlive the layer that used them, and a session re-running a
+  // dozen times would leak a megabyte a go without this.
+  return { url, release: () => URL.revokeObjectURL(url) };
+}
+
+export interface LegendEntry {
+  label: string;
+  /** Data URL of the swatch the service publishes. */
+  swatch: string;
+}
+
+/** A service's own legend, so classes are named as it names them rather than
+ * as this tool guesses. */
+export async function serviceLegend(
+  serviceUrl: string,
+  signal?: AbortSignal,
+): Promise<LegendEntry[]> {
+  try {
+    const response = await fetch(`${serviceUrl}/legend?f=json`, { signal });
+    if (!response.ok) return [];
+    const payload = (await response.json()) as {
+      layers?: Array<{
+        legend?: Array<{
+          label?: string;
+          imageData?: string;
+          contentType?: string;
+        }>;
+      }>;
+    };
+    return (payload.layers?.[0]?.legend ?? [])
+      .filter((entry) => entry.label && entry.imageData)
+      .map((entry) => ({
+        label: String(entry.label),
+        swatch: `data:${entry.contentType ?? "image/png"};base64,${entry.imageData}`,
+      }));
+  } catch {
+    // A missing legend is a cosmetic loss, never a reason to fail a run.
+    return [];
+  }
+}

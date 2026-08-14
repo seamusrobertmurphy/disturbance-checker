@@ -10,6 +10,7 @@ import {
   withinCanada,
   type FireRecord,
 } from "./fire";
+import { managementActivity, type ManagementSummary } from "./management";
 
 // Independent records of what happened on the ground.
 //
@@ -379,4 +380,25 @@ export async function fireEvidence(
     yearsUnassessed,
     sources,
   };
+}
+
+
+/**
+ * Recorded management over the area, where the jurisdiction publishes it.
+ *
+ * Only National Forest System land is covered, so this is attempted only
+ * inside the United States and its absence is reported by the caller as a
+ * question of jurisdiction rather than of harvest.
+ */
+export async function managementRecord(
+  bbox: [number, number, number, number],
+  years: number[],
+  signal?: AbortSignal,
+): Promise<ManagementSummary | null> {
+  if (!withinUnitedStates(bbox)) return null;
+  try {
+    return await managementActivity(bbox, years, signal);
+  } catch {
+    return null;
+  }
 }

@@ -915,3 +915,27 @@ select.dc-input {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* LANDFIRE class legend. The swatches are the service's own, so the colours
+   on the map and the names beside them cannot drift apart. */
+.dc-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+}
+
+.dc-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+
+.dc-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  flex: none;
+}

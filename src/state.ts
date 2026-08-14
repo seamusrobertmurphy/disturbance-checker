@@ -15,6 +15,7 @@ import {
 } from "./raster/mask";
 import type { Look } from "./reference/wayback";
 import type { FireEvidence, IdsSummary } from "./reference/corroborate";
+import type { ManagementSummary } from "./reference/management";
 
 export type RunStatus =
   | "idle"
@@ -105,6 +106,8 @@ export interface State {
 export interface Corroboration {
   ids: IdsSummary;
   fires: FireEvidence;
+  /** Recorded silvicultural activity, National Forest System land only. */
+  management: ManagementSummary | null;
   years: number[];
   fetchedAt: number;
 }
