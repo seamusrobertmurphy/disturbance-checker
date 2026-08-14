@@ -15,6 +15,8 @@ interface MapLibreLike {
   addLayer: (layer: Record<string, unknown>, beforeId?: string) => void;
   removeLayer: (id: string) => void;
   getLayer: (id: string) => unknown;
+  setPaintProperty?: (id: string, name: string, value: unknown) => void;
+  setLayoutProperty?: (id: string, name: string, value: unknown) => void;
   isStyleLoaded?: () => boolean;
   once?: (event: string, handler: () => void) => void;
 }
@@ -147,6 +149,114 @@ export class MapLayerManager {
 
     if (this.ready(map)) draw();
     else map.once?.("styledata", draw);
+  }
+
+  /**
+   * Add a tiled raster from an external service.
+   *
+   * Separate from addRaster because the two have opposite lifetimes and
+   * opposite places in the stack. A result raster is one image this tab
+   * painted and belongs on top; a reference basemap is a tile service and
+   * belongs underneath everything, including the analysis it is there to
+   * corroborate.
+   */
+  addTiles(options: {
+    key: string;
+    name: string;
+    tileUrl: string;
+    attribution: string;
+    visible: boolean;
+    opacity?: number;
+    maxzoom?: number;
+    beforeId?: string;
+  }): void {
+    const map = this.map();
+    if (!map) return;
+    const id = `${PREFIX}-${options.key}`;
+    this.remove(id);
+
+    const sourceId = `${id}-src`;
+    const layerId = `${id}-lyr`;
+
+    const draw = () => {
+      try {
+        map.addSource(sourceId, {
+          type: "raster",
+          tiles: [options.tileUrl],
+          tileSize: 256,
+          maxzoom: options.maxzoom ?? 19,
+          attribution: options.attribution,
+        });
+        map.addLayer(
+          {
+            id: layerId,
+            type: "raster",
+            source: sourceId,
+            layout: { visibility: options.visible ? "visible" : "none" },
+            paint: { "raster-opacity": options.opacity ?? 1 },
+          },
+          options.beforeId,
+        );
+      } catch {
+        return;
+      }
+
+      this.managed.set(id, {
+        id,
+        sourceIds: [sourceId],
+        nativeLayerIds: [layerId],
+      });
+      this.app.registerExternalNativeLayer?.({
+        id,
+        name: options.name,
+        type: "raster",
+        nativeLayerIds: [layerId],
+        sourceIds: [sourceId],
+        opacity: options.opacity ?? 1,
+        metadata: { sourceKind: "tuvsud-disturbance-check-reference" },
+      });
+    };
+
+    if (this.ready(map)) draw();
+    else map.once?.("styledata", draw);
+  }
+
+  /**
+   * Set the opacity of a layer this manager created, without rebuilding it.
+   *
+   * The before-and-after blend moves this on every frame of a drag, so it has
+   * to be a paint-property write rather than a re-add. Re-adding an image
+   * source per frame flickers, because the browser re-decodes the PNG.
+   */
+  setOpacity(key: string, opacity: number): void {
+    const map = this.map();
+    const entry = this.managed.get(`${PREFIX}-${key}`);
+    if (!map || !entry) return;
+    for (const layerId of entry.nativeLayerIds) {
+      try {
+        if (map.getLayer(layerId)) {
+          map.setPaintProperty?.(layerId, "raster-opacity", opacity);
+        }
+      } catch {
+        // The style may have been swapped underneath us.
+      }
+    }
+  }
+
+  /** Show or hide a layer this manager created. */
+  setVisible(key: string, visible: boolean): void {
+    const map = this.map();
+    const entry = this.managed.get(`${PREFIX}-${key}`);
+    if (!map || !entry) return;
+    for (const layerId of entry.nativeLayerIds) {
+      try {
+        if (map.getLayer(layerId)) {
+          map.setLayoutProperty?.(layerId, "visibility", visible ? "visible" : "none");
+        }
+      } catch {
+        // Same.
+      }
+    }
   }
 
   /**

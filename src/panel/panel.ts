@@ -14,6 +14,14 @@ import {
 } from "../analysis/run";
 import { describeError } from "../errors";
 import { CLOUD_MASKS } from "../raster/mask";
+import { gridCornersLonLat } from "../raster/grid";
+import {
+  WAYBACK_ATTRIBUTION,
+  bracketLooks,
+  distinctLooks,
+  loadReleases,
+  type Look,
+} from "../reference/wayback";
 import { buildManifest } from "../manifest";
 import { MapLayerManager } from "../map/layers";
 import {
@@ -185,7 +193,16 @@ export class DisturbancePanel {
       ),
     );
     this.container.appendChild(
-      this.section("findings", "7", "Findings", "", () => this.renderFindings()),
+      this.section(
+        "visual",
+        "7",
+        "Visual check",
+        this.summariseVisual(),
+        () => this.renderVisual(),
+      ),
+    );
+    this.container.appendChild(
+      this.section("findings", "8", "Findings", "", () => this.renderFindings()),
     );
     this.container.appendChild(this.renderHelpFooter());
   }
@@ -1144,6 +1161,304 @@ export class DisturbancePanel {
   }
 
   // Section 5 ---------------------------------------------------------------
+
+  // Section 7 ---------------------------------------------------------------
+
+  private summariseVisual(): string {
+    if (this.state.looksStatus === "loading") return "searching";
+    if (this.state.looks.length === 0) return "";
+    return `${this.state.looks.length} looks`;
+  }
+
+  /**
+   * Two independent visual checks on the same screen.
+   *
+   * The first is the tool's own before-and-after true colour, at 10 m, built
+   * from the same masked observations the indices were built from. It answers
+   * whether the composite that produced the number looks like what the number
+   * claims.
+   *
+   * The second is Esri's dated high-resolution archive, frequently sub-metre.
+   * It answers what the ground actually is: a cutblock, a road, a landing, a
+   * blowdown. Sentinel-2 cannot resolve that and never could.
+   */
+  private renderVisual(): HTMLElement {
+    const body = el("div", "dc-stack");
+
+    if (this.state.results.length === 0) {
+      body.appendChild(
+        el("p", "dc-hint", "Run a check first. Both comparisons need an area and a pair of dates."),
+      );
+      return body;
+    }
+
+    body.appendChild(el("div", "dc-subhead", "Before and after, 10 m"));
+
+    const blend = el("input", "dc-range");
+    blend.type = "range";
+    blend.min = "0";
+    blend.max = "100";
+    blend.step = "1";
+    blend.value = String(Math.round(this.state.rgbBlend * 100));
+    blend.addEventListener("input", () => {
+      this.applyBlend(Number.parseInt(blend.value, 10) / 100);
+    });
+
+    const blendRow = el("div", "dc-row dc-row-center");
+    blendRow.appendChild(el("span", "dc-blend-end", "Pre"));
+    blendRow.appendChild(blend);
+    blendRow.appendChild(el("span", "dc-blend-end", "Post"));
+    body.appendChild(
+      field(
+        "Crossfade",
+        blendRow,
+        "Drag to fade between the pre and post true-colour composites. Both are built from the masked observations the analysis used, not from a single scene, so what you see is what was measured.",
+      ),
+    );
+
+    const blinkRow = el("div", "dc-row");
+    blinkRow.appendChild(
+      button("Blink", () => this.blink(), "secondary"),
+    );
+    blinkRow.appendChild(
+      button("Hide both", () => this.stopBlend(), "secondary"),
+    );
+    body.appendChild(blinkRow);
+    body.appendChild(
+      el(
+        "p",
+        "dc-hint",
+        "Blinking between two dates over fixed ground is how change is found by eye. A clearing jumps; noise does not.",
+      ),
+    );
+
+    body.appendChild(el("div", "dc-subhead", "High-resolution archive"));
+
+    if (this.state.looksStatus === "idle") {
+      body.appendChild(
+        button("Find available imagery", () => void this.findLooks(), "primary"),
+      );
+      body.appendChild(
+        el(
+          "p",
+          "dc-hint",
+          "Searches Esri's dated World Imagery archive for every distinct photograph of this site. Takes around twenty seconds, because it reads capture metadata release by release.",
+        ),
+      );
+      return body;
+    }
+
+    if (this.state.looksStatus === "loading") {
+      body.appendChild(el("p", "dc-hint", "Reading capture dates, around twenty seconds."));
+      return body;
+    }
+
+    if (this.state.looksStatus === "error") {
+      body.appendChild(
+        this.notice(
+          "warning",
+          "The archive could not be read",
+          this.state.looksError ??
+            "The dated basemap is unavailable. The analysis is unaffected.",
+        ),
+      );
+      body.appendChild(button("Try again", () => void this.findLooks(), "secondary"));
+      return body;
+    }
+
+    if (this.state.looks.length === 0) {
+      body.appendChild(
+        this.notice(
+          "warning",
+          "No high-resolution imagery found here",
+          "The archive holds no dated capture over this area. Outside the United States and Europe this is common in remote terrain.",
+        ),
+      );
+      return body;
+    }
+
+    const period = this.state.periods[0];
+    const bracket = period
+      ? bracketLooks(this.state.looks, period.preEnd, period.postEnd)
+      : { before: null, after: null, latest: null };
+
+    // The trap this section exists to prevent. A release is a publication
+    // event; a capture is a photograph. Consecutive releases usually carry the
+    // identical picture, so a verifier stepping through release dates can
+    // easily write down a date four years away from the imagery in front of
+    // them.
+    if (
+      bracket.before &&
+      bracket.after &&
+      bracket.before.capture.captureDate === bracket.after.capture.captureDate
+    ) {
+      body.appendChild(
+        this.notice(
+          "warning",
+          "No independent look inside the post window",
+          `The newest capture at or before both window ends is the same photograph, from ${bracket.before.capture.captureDate}. High-resolution imagery cannot confirm or refute a change between these two dates here, and quoting it as if it could would misdate the evidence.`,
+        ),
+      );
+    }
+
+    for (const look of this.state.looks) {
+      body.appendChild(this.renderLook(look, bracket));
+    }
+
+    body.appendChild(
+      el(
+        "p",
+        "dc-hint",
+        `Dates shown are capture dates read from the archive's own metadata at this location, not release dates. ${WAYBACK_ATTRIBUTION}.`,
+      ),
+    );
+
+    return body;
+  }
+
+  private renderLook(
+    look: Look,
+    bracket: { before: Look | null; after: Look | null },
+  ): HTMLElement {
+    const row = el("div", "dc-look");
+    const active = this.state.activeLook === look.capture.captureDate;
+
+    const labels: string[] = [];
+    if (bracket.before && bracket.before === look) labels.push("pre window");
+    if (bracket.after && bracket.after === look) labels.push("post window");
+
+    const head = el("div", "dc-look-head");
+    head.appendChild(
+      el("span", "dc-look-date", look.capture.captureDate ?? "undated"),
+    );
+    if (labels.length > 0) {
+      head.appendChild(el("span", "dc-look-tag", labels.join(", ")));
+    }
+    row.appendChild(head);
+
+    const parts = [
+      look.capture.resolution ? `${look.capture.resolution} m` : null,
+      look.capture.source,
+      look.capture.provider,
+      look.capture.accuracy ? `±${look.capture.accuracy} m` : null,
+    ].filter(Boolean);
+    row.appendChild(el("div", "dc-look-meta", parts.join(" · ")));
+
+    row.appendChild(
+      button(
+        active ? "Hide" : "Show",
+        () => this.toggleLook(look),
+        active ? "primary" : "secondary",
+      ),
+    );
+    return row;
+  }
+
+  private async findLooks(): Promise<void> {
+    const bounds = this.state.results[0]?.grid;
+    const aoi = this.state.aoi;
+    if (!aoi) return;
+
+    this.patch({ looksStatus: "loading", looksError: null });
+    try {
+      const centre = this.aoiCentre();
+      if (!centre) throw new Error("The area of interest has no centre.");
+      const releases = await loadReleases();
+      const looks = await distinctLooks(releases, centre.lon, centre.lat);
+      this.patch({ looks, looksStatus: "ready", looksError: null });
+    } catch (error) {
+      this.patch({
+        looksStatus: "error",
+        looksError: describeError(error),
+      });
+    }
+    void bounds;
+  }
+
+  private aoiCentre(): { lon: number; lat: number } | null {
+    const grid = this.state.results[0]?.grid;
+    if (grid) {
+      const corners = gridCornersLonLat(grid);
+      const lon =
+        corners.reduce((total, corner) => total + corner[0], 0) / corners.length;
+      const lat =
+        corners.reduce((total, corner) => total + corner[1], 0) / corners.length;
+      return { lon, lat };
+    }
+    const aoi = this.state.aoi;
+    if (aoi?.kind === "rectangle") {
+      return {
+        lon: (aoi.west + aoi.east) / 2,
+        lat: (aoi.south + aoi.north) / 2,
+      };
+    }
+    return null;
+  }
+
+  private toggleLook(look: Look): void {
+    const key = "ref-wayback";
+    if (this.state.activeLook === look.capture.captureDate) {
+      this.layers.remove(`tuvsud-dc-${key}`);
+      this.patch({ activeLook: null });
+      return;
+    }
+    this.layers.addTiles({
+      key,
+      name: `Imagery ${look.capture.captureDate ?? look.release.releaseDate}`,
+      tileUrl: look.release.tileUrl,
+      attribution: WAYBACK_ATTRIBUTION,
+      visible: true,
+      maxzoom: 19,
+      // Under every result layer: it is context for the analysis, not a
+      // competitor to it.
+      beforeId: this.lowestResultLayerId(),
+    });
+    this.patch({ activeLook: look.capture.captureDate });
+  }
+
+  /** The bottom-most layer this run created, so reference imagery slides
+   * underneath the whole result stack rather than on top of the basemap. */
+  private lowestResultLayerId(): string | undefined {
+    const first = this.state.layerIds[0];
+    return first ? `${first}-lyr` : undefined;
+  }
+
+  private applyBlend(value: number): void {
+    const result = this.state.results[0];
+    if (!result) return;
+    const pre = `r-${this.layerKeyFor(result, "pre-rgb")}`;
+    const post = `r-${this.layerKeyFor(result, "post-rgb")}`;
+    this.layers.setVisible(pre, true);
+    this.layers.setVisible(post, true);
+    this.layers.setOpacity(pre, 1);
+    // Fading the post layer over an opaque pre layer keeps the ground covered
+    // at every position on the slider. Fading both leaves the basemap showing
+    // through in the middle, which reads as haze and is exactly the artefact
+    // the check is looking for.
+    this.layers.setOpacity(post, value);
+    this.state.rgbBlend = value;
+    this.state.rgbBlendActive = true;
+  }
+
+  private stopBlend(): void {
+    const result = this.state.results[0];
+    if (!result) return;
+    this.layers.setVisible(`r-${this.layerKeyFor(result, "pre-rgb")}`, false);
+    this.layers.setVisible(`r-${this.layerKeyFor(result, "post-rgb")}`, false);
+    this.patch({ rgbBlendActive: false });
+  }
+
+  private blink(): void {
+    const steps = [0, 1, 0, 1, 0, 1];
+    steps.forEach((value, index) => {
+      window.setTimeout(() => this.applyBlend(value), index * 650);
+    });
+  }
+
+  private layerKeyFor(result: PeriodResult, suffix: string): string {
+    const layer = result.layers.find((entry) => entry.key.endsWith(suffix));
+    return (layer?.key ?? "").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+  }
 
   private renderFindings(): HTMLElement {
     const body = el("div", "dc-stack");

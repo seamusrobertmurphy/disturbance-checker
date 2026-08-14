@@ -13,6 +13,7 @@ import {
   DEFAULT_MASK_OPTIONS,
   type MaskOptions,
 } from "./raster/mask";
+import type { Look } from "./reference/wayback";
 
 export type RunStatus =
   | "idle"
@@ -61,6 +62,32 @@ export interface State {
 
   /** GeoLibre layer ids created by the last run, so a re-run can replace them. */
   layerIds: string[];
+
+  /**
+   * Distinct high-resolution looks found over the AOI, newest capture first.
+   *
+   * Not persisted and not populated automatically. Finding them costs about
+   * thirty requests to a metadata service, which is not a price to pay on
+   * every run for something a verifier reaches for only when the index maths
+   * has already flagged something.
+   */
+  looks: Look[];
+  looksStatus: "idle" | "loading" | "ready" | "error";
+  looksError: string | null;
+  /** Capture date of the look currently drawn, or null when none is. */
+  activeLook: string | null;
+
+  /**
+   * Blend between the pre and post RGB composites, 0 pre, 1 post.
+   *
+   * A crossfade rather than a swipe. A swipe compares two halves of the
+   * screen, which finds an edge; a crossfade held under the eye compares the
+   * same ground at two dates, which is what finds a clearing. Blinking between
+   * the ends is the oldest change-detection technique there is and it still
+   * beats looking at two pictures side by side.
+   */
+  rgbBlend: number;
+  rgbBlendActive: boolean;
 }
 
 function defaultPeriod(id: string, preYear: number, postYear: number): Period {
@@ -99,6 +126,13 @@ export function createState(): State {
     status: "idle",
     progress: "",
     error: null,
+
+    looks: [],
+    looksStatus: "idle",
+    looksError: null,
+    activeLook: null,
+    rgbBlend: 1,
+    rgbBlendActive: false,
 
     runStartedAt: null,
     results: [],

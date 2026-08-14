@@ -822,3 +822,59 @@ select.dc-input {
   line-height: 1.45;
   white-space: pre;
 }
+
+/* Section 7, visual check. The look rows are a list of photographs of one
+   place at different dates, so the date is the heading and everything else is
+   provenance for a citation. */
+.dc-subhead {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  margin: 14px 0 6px;
+}
+.dc-subhead:first-child {
+  margin-top: 0;
+}
+
+.dc-blend-end {
+  font-size: 11px;
+  opacity: 0.7;
+  min-width: 26px;
+}
+
+.dc-look {
+  border: 1px solid var(--dc-border, rgba(128, 128, 128, 0.3));
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dc-look-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.dc-look-date {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.dc-look-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(120, 160, 220, 0.25);
+}
+
+.dc-look-meta {
+  font-size: 11px;
+  opacity: 0.75;
+}

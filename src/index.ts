@@ -67,7 +67,7 @@ function helpMenuItems(app: GeoLibreAppAPI): GeoLibreToolbarMenuItem[] {
 const plugin: GeoLibrePlugin = {
   id: PANEL_ID,
   name: "Disturbance Check",
-  version: "0.3.0",
+  version: "0.4.0",
   // Neither a Cloud project nor an OAuth client is a parameter any more.
   // Nothing this plugin reads requires an account, so the only thing left
   // worth linking to is a guide page.
