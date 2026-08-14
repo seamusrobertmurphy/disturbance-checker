@@ -3,6 +3,10 @@ name: Build and deploy
 # Builds the plugin, drops it into a pinned GeoLibre checkout as a bundled
 # plugin, builds the GeoLibre web app, and publishes the result to GitHub Pages.
 #
+# No secrets are involved. The plugin reads open imagery from public endpoints
+# that answer anonymous requests, so there is no client ID to inject and no
+# credential that could leak into the published bundle.
+#
 # GeoLibre is never vendored into this repository. It is checked out here at a
 # pinned tag so a deploy is reproducible and an upstream change cannot alter
 # what colleagues see without a deliberate bump to GEOLIBRE_REF.
@@ -67,9 +71,6 @@ jobs:
           # GitHub Pages serves this project from a subpath, so the app must be
           # built with a matching base or every asset URL 404s.
           GEOLIBRE_APP_BASE: /${{ github.event.repository.name }}/
-          # Registered in the operator's own Cloud project, with this Pages
-          # origin listed under Authorized JavaScript origins.
-          VITE_GEE_OAUTH_CLIENT_ID: ${{ secrets.GEE_OAUTH_CLIENT_ID }}
         run: |
           npm ci
           npm run build

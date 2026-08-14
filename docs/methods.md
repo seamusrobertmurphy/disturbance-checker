@@ -1,290 +1,265 @@
 # Methods reference
 
-The full processing chain, written for someone who needs to defend it, modify
-it, or reproduce it outside this tool. It documents what the code does, why each
-choice was made, and where this implementation diverges from the SOP PDF and
-from the production QGIS and ArcGIS scripts.
+The processing chain, every constant, and every place this build departs from
+the SOP or from the two production scripts. Source of record for each constant
+is [`src/defaults.ts`](../src/defaults.ts); the pipeline is
+[`src/analysis/run.ts`](../src/analysis/run.ts).
 
-Companion source files: [`src/defaults.ts`](../src/defaults.ts) for every
-constant, [`src/ee/analysis.ts`](../src/ee/analysis.ts) for the Earth Engine
-graph, [`src/diagnostics.ts`](../src/diagnostics.ts) for the histogram rules.
+## Where the work happens
 
-## 1. Where computation happens
+Everything is computed in the browser tab.
 
-Nothing is computed in the browser. The Earth Engine client assembles a JSON
-description of a computation and holds it; work happens only when something
-forces evaluation. There are exactly two such moments:
+The previous implementation built an Earth Engine expression graph and sent it
+to Google, which composited, reduced and rendered tiles on its servers. This one
+has no server. It asks a STAC catalogue which scenes exist, reads the pixels it
+needs out of cloud-optimised GeoTIFFs with HTTP range requests, and does the
+arithmetic in JavaScript.
 
-- `evaluate()` sends the graph and returns a value. Scene counts, histograms and
-  class areas arrive this way.
-- `getMap()` sends the graph and asks Google to serve it as tiles, returning an
-  XYZ URL template.
+Three consequences run through everything below.
 
-That template is the handoff point. From there it is an ordinary raster layer
-and the host map neither knows nor cares that it came from a satellite pipeline.
+**No credentials.** Both the catalogue and the imagery answer anonymous
+requests, which is the reason the tool needs no account.
 
-## 2. Collection and radiometry
+**No sampling.** Earth Engine's reducers worked to a `maxPixels` ceiling and
+truncated past it, which the SOP records happening silently at `1e9` on wide
+areas. Here every pixel of the working grid is read and counted, so there is no
+ceiling and nothing to truncate.
 
-```
-COPERNICUS/S2_SR_HARMONIZED
-```
+**Memory is bounded by blocks, not by area.** The grid is processed in 512 pixel
+blocks, so a 200,000 ha project costs the same per block as a 200 ha one.
 
-HARMONIZED is mandatory, not a preference. Plain `S2_SR` carries a +1000 DN
-offset on scenes processed after the January 2022 baseline change. Mixing
-pre- and post-2022 scenes without harmonisation propagates a false dNDVI signal
-of roughly 0.04 across the whole project area, which is a third of the way to
-the Low threshold before anything real has happened.
+## 1. Scene discovery
 
-Surface reflectance is scaled by dividing by 10000, applied after compositing so
-the quality band used for mosaicking is not rescaled with it.
+A POST to Earth Search filtered by the AOI bounding box, the date window and
+`eo:cloud_cover`. Collection `sentinel-2-l2a`; the reasons for not using
+Collection 1 are in [data-access.md](data-access.md).
 
-## 3. Cloud removal
+The scene-level cloud ceiling has changed meaning. In the production scripts
+`MAX_CLOUD = 10` was dead on the active path, because Cloud Score+ masked per
+pixel and no scene filter ever ran. Here it is live but it is a **download**
+filter, applied before any pixel is fetched, and the default is 30. Masking is
+still per pixel. A ceiling of 10 would discard most of a Pacific Northwest
+window and thin the median past the point where it is stable.
 
-Two methods are implemented. They are different reductions, not variants of one,
-and they will not produce identical output.
+### Deduplication
 
-### Cloud Score+ (default, matches production)
+Two collapses happen before anything is read, and both change results.
 
-```js
-const linked = s2.linkCollection(csPlus, ["cs"]);
-const masked = linked.map(img => img.updateMask(img.select("cs").gte(0.40)));
-const composite = masked.qualityMosaic("cs").divide(10000).clip(roi);
-```
+**Reprocessed products.** Every acquisition from 2018 to 2021 appears twice: as
+ESA originally released it, on baseline 00.01 to 03.01, and as the Collection 1
+reprocessing on baseline 05.00. Keeping both would weight that observation twice
+in the median and mix two radiometric calibrations in one composite. The higher
+baseline wins.
 
-`GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED` supplies a per-pixel `cs` quality
-score. `linkCollection` joins it onto matching Sentinel-2 scenes by time, so
-each pixel carries its own clarity value rather than inheriting a scene-level
-verdict.
+**Tiles of one overpass.** MGRS tiles overlap, and near a UTM zone boundary a
+single overpass is published twice, once per zone. `S2B_10UCA_20190802` and
+`S2B_9UYR_20190802` are the same two seconds of sensing on two grids, and both
+carry datatake `GS2B_20190802T191919_012566`. Scenes are therefore folded into
+**observations** keyed by datatake. Where an AOI spans a tile boundary inside
+one zone, the tiles of an observation are mosaicked at read time so the overpass
+still counts once.
 
-Two consequences follow, and both matter:
+Everything downstream counts observations, not scenes. The panel says
+"overpasses" for the same reason.
 
-**No scene-level cloud filter is needed.** Masking is per pixel, so a scene that
-is 80% cloudy still contributes its clear 20%. This is why the production
-scripts define `MAX_CLOUD` but never apply it on the active path. Discarding
-whole scenes would throw away good pixels for no benefit.
+## 2. Working grid
 
-**`qualityMosaic` is not an average.** For every pixel it selects the single
-observation with the highest `cs` value in the window. The output is a mosaic of
-best-available observations, not a central tendency. This means:
+Sentinel-2 COGs are written on a UTM grid, so the tool computes on the pixels as
+stored. The grid is the UTM zone that reaches the most observations, with the
+zone of the AOI centre preferred on a tie, at 20 m, snapped to a whole multiple
+of the resolution so reads sample rather than resample.
 
-- There is no median normaliser, so the "median is unstable below about four
-  scenes" concern from the SOP does not apply in the same way. One clear
-  observation is enough for a valid pixel.
-- Adjacent pixels may come from different dates. Within a two-month
-  growing-season window that is usually immaterial, but it is a real seam risk
-  if the window spans a phenological transition.
-- Residual haze that Cloud Score+ scores above the threshold passes through
-  unaveraged, where a median would have suppressed it.
+This removes a whole class of error the SOP had to guard against. Earth Engine
+returned composites in EPSG:4326 and every area reduction had to be passed an
+explicit UTM projection or it would measure hectares on a degree grid. Here a
+pixel is exactly 20 by 20 m and an area is a pixel count times a constant.
+Reprojection happens once, at the end, only to draw the result on the map.
+Numbers never travel through it.
 
-`CLEAR_THRESHOLD` defaults to 0.40. Raising it to 0.50 or 0.65 is stricter and
-keeps fewer pixels, at the cost of more gaps.
+## 3. Radiometry
 
-### QA60 with median (legacy)
+DN divided by 10000, after removing the +1000 DN baseline offset from any scene
+where the catalogue reports it still present. The flag is read per scene rather
+than inferred from the date. Full reasoning in
+[data-access.md](data-access.md).
 
-```js
-const masked = s2
-  .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", maxCloud))
-  .map(maskQA60);
-const composite = masked.median().divide(10000).clip(roi);
-```
+## 4. Cloud masking
 
-Masks bits 10 (opaque cloud) and 11 (cirrus) of the QA60 band, discards scenes
-above the cloud ceiling, then takes a per-pixel median.
+**This is the weakest part of the build and the most important thing to
+understand about it.**
 
-This is what the SOP PDF documents and what the scripts used before the switch.
-It is retained selectable so a result produced under the old method can be
-reproduced exactly. Its weaknesses are the reason for the switch: QA60 is coarse,
-it does not flag cloud shadow at all, and the median needs a healthy sample per
-pixel or it produces patchwork artefacts.
+The only quality layer reachable anonymously from a browser is SCL, the Sen2Cor
+scene classification, at 20 m. Rejected by default: no-data (0), saturated (1),
+cast shadow (2), cloud shadow (3), cloud medium probability (8), cloud high
+probability (9), thin cirrus (10) and snow (11). Vegetation (4), not-vegetated
+(5), water (6) and unclassified (7) survive.
 
-**Neither method masks cloud shadow explicitly.** Cloud Score+ scores shadow
-poorly and so removes much of it incidentally; QA60 does not address it. Shadow
-depresses near-infrared and inflates dNDVI in exactly the way real canopy loss
-does. This is a known limitation of both, not an implementation gap.
+Cast shadow and snow are switches, and the manifest records how they were set.
+Class 2 covers both cloud shadow the classifier declined to call class 3 and
+ordinary topographic shade. Rejecting it is free on flat ground; in steep
+terrain it can remove most north-facing slopes from every scene in a window,
+which costs more than the cloud it avoids.
 
-## 4. Spectral indices
+SCL is a categorical guess, not a probability. It misses thin cloud edges and
+confuses bright bare ground with cloud.
 
-All three are normalised differences, so all are bounded to [-1, 1] and are
-insensitive to multiplicative illumination differences.
+The interface in [`src/raster/mask.ts`](../src/raster/mask.ts) is asynchronous
+and receives the whole scene block, so a segmentation model exported to ONNX and
+run with `onnxruntime-web` can be added behind it without any caller changing.
+Models of that class need red, green and NIR at 10 m, which are already being
+fetched.
 
-| Index | Formula | Bands | Resolution | Measures |
-|---|---|---|---|---|
-| NDVI | (B8 − B4) / (B8 + B4) | NIR, Red | 10 m | Vegetation vigour |
-| NDMI | (B8 − B11) / (B8 + B11) | NIR, SWIR1 | 10 m, 20 m | Canopy water content |
-| NBR | (B8A − B12) / (B8A + B12) | narrow NIR, SWIR2 | 20 m | Char and ash |
+## 5. Compositing
 
-NBR deliberately uses B8A rather than B8. The narrow near-infrared band is
-spectrally closer to SWIR2's acquisition geometry, which is the MTBS convention
-and keeps values comparable with published burn-severity products.
+Per-pixel median over surviving observations.
 
-NDMI mixes a 10 m and a 20 m band; Earth Engine resamples on demand. Reductions
-are run at 20 m partly for this reason, so the analysis grid matches the coarsest
-input rather than implying precision the SWIR bands do not have.
+Earth Engine ran `qualityMosaic("cs")`, which ranks every observation on the
+Cloud Score+ clarity score and keeps the single clearest, never averaging. That
+needs a continuous score to rank on. SCL gives classes, so there is nothing to
+rank and the reduction falls back to a median, which is the SOP's own documented
+alternative and what the production scripts ran before the Cloud Score+ switch.
 
-## 5. Water masking
+Two details are load-bearing.
 
-```js
-const water = ee.Image("JRC/GSW1_4/GlobalSurfaceWater")
-  .select("occurrence").lt(50).unmask(1);
-```
+**Validity is decided per observation, not per band.** If each band chose its own
+surviving observations, NDVI could be a red median over five looks divided into
+a NIR median over four, silently comparing different days. An observation counts
+only where every reflectance band it contributes is present.
 
-Applied **at the delta stage, not to the composite**. Water produces large
-spurious spectral change unrelated to forest condition, so it is excluded from
-the deltas, but the RGB composites keep water so the operator retains visual
-context for orientation.
+**The even case averages the two central values,** matching Earth Engine's median
+reducer rather than taking a lower median. On a stack of four that is the
+difference between a composite that jumps when one scene is added and one that
+does not.
 
-`unmask(1)` is essential. The Global Surface Water layer has no data outside its
-footprint, which includes high latitudes and small islands. Without `unmask(1)`
-every pixel outside that footprint becomes masked in every delta, and the tool
-silently returns nothing over exactly the terrain most likely to be under
-verification.
+Every composite carries its per-pixel count of surviving observations. The SOP's
+floor of four scenes was advisory under Cloud Score+ and is **binding** here; the
+run raises a diagnostic when a window or a meaningful share of pixels falls
+below it.
 
-## 6. Differencing and sign convention
+## 6. Indices
 
-| Delta | Direction | Positive means |
+SOP Step 5, unchanged:
+
+| Index | Bands | Assets |
 |---|---|---|
-| dNDVI | pre − post | Canopy loss |
-| dNDMI | pre − post | Moisture loss or stress |
-| dNBR | post − pre | Burned |
+| NDVI | (B8 − B4) / (B8 + B4) | `nir`, `red` |
+| NDMI | (B8 − B11) / (B8 + B11) | `nir`, `swir16` |
+| NBR | (B8A − B12) / (B8A + B12) | `nir08`, `swir22` |
 
-dNBR is inverted relative to the other two. This is not an inconsistency: it is
-the MTBS and USFS convention, and preserving it keeps the thresholds comparable
-with published burn-severity literature. All three are arranged so that positive
-means the change of interest, which is what makes a single set of class-break
-semantics work across all three.
+NBR takes the narrow near-infrared B8A rather than B8, matching both production
+scripts. B8A and B12 share a 20 m grid, so the ratio is formed from two bands
+sampled the same way.
 
-## 7. Histogram
+## 7. Deltas and water
 
-```js
-delta.reduceRegion({
-  reducer: ee.Reducer.fixedHistogram(-0.5, 0.8, 130),
-  geometry: roi, scale: 20, maxPixels: 1e10,
-});
-```
+SOP Step 5 sign convention, unchanged. dNDVI and dNDMI are pre minus post, so
+positive is loss. dNBR is post minus pre, so positive is burn, matching MTBS and
+USFS Region 6.
 
-130 bins across [-0.5, 0.8] gives a bin width of exactly 0.01, so bin edges fall
-on the class breaks rather than straddling them.
+Water is masked at the delta stage rather than on the composite, exactly as the
+SOP does, so the RGB layers keep their water for visual context while no delta
+is computed over it. A pixel counted as water in **either** window is masked in
+both: a lake in the pre window and a mudflat in the post window is a water-level
+change, not canopy loss.
 
-`maxPixels` is raised from the scripts' `1e9` to `1e10`. At `1e9` a wide area
-silently returns a truncated histogram rather than raising, which produces a
-distribution that looks plausible and is wrong. The trade is that a very large
-area may now hit the user memory limit and fail loudly instead.
+The source has changed. Earth Engine used JRC Global Surface Water thresholded
+at 50 percent occurrence, a multi-decadal layer with no anonymous COG
+equivalent. Water is now SCL class 6, and a pixel counts as water when the
+majority of its valid observations called it water. Majority rather than any, so
+one misclassified scene cannot punch a hole through the delta; majority rather
+than all, so a window where one scene was cloudy over the lake still masks it.
 
-### Reading the distribution
-
-The shape is the evidence for or against the thresholds. Three cases,
-implemented in `analyseHistogram`:
-
-**Unimodal at zero, narrow tail.** Noise and phenology only. Defaults hold.
-
-**Bimodal with a gap.** A separated population above the noise bulk. This is the
-signature of real disturbance. The Low break belongs inside the gap, not on the
-default. The tool locates the gap as a run of at least three consecutive bins
-below 0.5% of peak count, with meaningful mass beyond, and marks the midpoint.
-
-**Unimodal with a long right tail, no gap.** The composites are not comparable.
-Causes are cloud shadow, seasonal mismatch, or bidirectional reflectance
-effects. The tool flags this when more than 15% of valid pixels sit above the
-Low break, or more than 2% above the High break.
-
-That last case is the failure mode that produced a real finding: a first pass
-flagged 38% of a project area as moisture-stressed, with a diffuse pattern
-unrelated to stand age, aspect or known beetle pressure. Both composites had
-been drawn from October to December windows, where senescence raises SWIR
-reflectance before leaf-fall. Re-running with growing-season windows collapsed
-the flagged area to 4%, co-located with reported beetle survey polygons. Raising
-the thresholds until the map looked reasonable would have hidden the cause and
-produced a defensible-looking but wrong number.
+**The two disagree on seasonal water.** GSW calls a pond that is wet half the
+time water. A window of scenes calls it water only if it was wet on those days.
 
 ## 8. Classification
 
-Four classes per delta: 0 undisturbed, 1 Low, 2 Moderate, 3 High, emitted as
-Int16.
+SOP Step 7. Class 0 undisturbed, 1 Low, 2 Moderate, 3 High, thresholds applied
+in ascending order with the highest match winning. Class 0 is drawn transparent
+so the composite underneath shows through, which is what lets a verifier see
+that an absence of colour is an absence of change rather than an absence of
+data.
+
+Default breaks, SOP Step 6:
 
 | Delta | Low | Moderate | High | Source |
 |---|---|---|---|---|
 | dNDVI | 0.10 | 0.20 | 0.35 | SOP Step 6 |
 | dNDMI | 0.15 | 0.30 | 0.45 | SOP Step 6 |
-| dNBR | 0.10 | 0.27 | 0.44 | MTBS / USFS PNW |
+| dNBR | 0.10 | 0.27 | 0.44 | SOP Step 6, MTBS / USFS PNW |
 
-Class 0 is masked with `updateMask(class.gt(0))` before the tiles are requested,
-so transparency is produced server-side. Nothing in the browser is compositing
-or blending; the tiles arrive with alpha already in them.
+Any deviation is recorded in the manifest with its justification.
 
-Thresholds are editable before a run and draggable on the histogram after one.
-Ordering is enforced so Low can never cross Moderate. Any value moved off its
-default marks that index as adjusted and requires a written justification, which
-is recorded in the run manifest.
+## 9. Histogram
 
-## 9. Areas
+130 fixed bins from −0.5 to 0.8, the SOP's `fixedHistogram(-0.5, 0.8, 130)`.
 
-```js
-ee.Image.pixelArea().divide(10000).addBands(classified).reduceRegion({
-  reducer: ee.Reducer.sum().group({ groupField: 1, groupName: "class" }),
-  geometry: roi, scale: 20, crs: utmCrs, maxPixels: 1e10,
-});
-```
+Values outside the range are dropped rather than piled into the end bins, which
+is what Earth Engine did. The SOP reads the shape of this curve to justify
+moving a break, so a spike at the edge that was really an overflow would be
+actively misleading.
 
-Composites are returned in EPSG:4326. Anything area-based must be computed on a
-metric grid or it is biased, increasingly so with latitude. The UTM zone is
-derived from the area centroid and passed as the reduction's output projection.
+The `maxPixels` ceiling is gone rather than raised. Every pixel is counted.
 
-The grouped reducer assumes band 0 is area and band 1 is class, which holds
-because `pixelArea()` is the base image and the classification is added after.
+## 10. Areas
 
-**Known discrepancy.** Areas are reduced at 20 m while the scripts export
-GeoTIFFs at 10 m. On fragmented disturbance with a lot of edge, the coarser grid
-under-counts. Treat the share-of-area percentage as the more robust figure for a
-finding, and expect hectare totals to differ modestly from one measured off a
-10 m export.
+A pixel count times 0.04 ha. The grid is metric and every pixel is the same
+size, so there is nothing to integrate and nothing to project.
 
-## 10. Parameter reference
+Where the AOI is a loaded boundary rather than a rectangle, the polygon is burnt
+onto the grid with an even-odd scanline fill over pixel centres, and the clip is
+applied before anything is tallied so the histogram, the class areas and the
+observed-pixel count all describe the same polygon. Even-odd rather than
+non-zero winding, so an inholding or an excluded wetland leaves its hole empty
+regardless of the order its rings were digitised in.
 
-| Constant | Value | Applies to |
+## Constants
+
+| Constant | Value | Where |
 |---|---|---|
-| `S2_COLLECTION` | `COPERNICUS/S2_SR_HARMONIZED` | Both methods |
-| `S2_SCALE_DIVISOR` | 10000 | Both |
-| `CLOUD_SCORE_PLUS_COLLECTION` | `GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED` | Cloud Score+ |
-| `CLOUD_SCORE_BAND` | `cs` | Cloud Score+ |
-| `DEFAULT_CLEAR_THRESHOLD` | 0.40 | Cloud Score+ |
-| `DEFAULT_MAX_CLOUD` | 10 | QA60 only |
-| `QA60_CLOUD_BIT` / `QA60_CIRRUS_BIT` | 10 / 11 | QA60 only |
-| Default window | 08-01 to 09-01 | Both |
-| `GSW_OCCURRENCE_THRESHOLD` | 50 | Both |
-| Histogram | `fixedHistogram(-0.5, 0.8, 130)` at scale 20 | Both |
-| `HISTOGRAM_MAX_PIXELS` | 1e10 | Both |
-| `AREA_SCALE` | 20 | Both |
+| `S2_STAC_COLLECTION` | `sentinel-2-l2a` | Scene discovery |
+| `S2_SCALE_DIVISOR` | 10000 | Radiometry |
+| `BOA_OFFSET_DN` | 1000 | Radiometry |
+| `DEFAULT_MAX_CLOUD` | 30 | Download filter |
+| `ANALYSIS_SCALE` | 20 | Working grid |
+| `BLOCK_SIZE` | 512 | Memory bound |
+| `MIN_STABLE_SCENE_COUNT` | 4 | Stability floor |
+| `HISTOGRAM_MIN` / `MAX` / `STEPS` | −0.5 / 0.8 / 130 | Histogram |
+| `DEFAULT_WINDOW_START_MONTH_DAY` | `08-01` | Periods |
+| `DEFAULT_WINDOW_END_MONTH_DAY` | `09-01` | Periods |
 
-## 11. Divergence from the SOP and the scripts
+## Divergence
 
-Three documents describe this analysis and they do not agree. Where they differ,
-this tool follows the scripts, because the scripts are what actually runs.
-
-| Item | SOP PDF | Production scripts | This tool |
+| Step | SOP PDF | Production scripts | This build |
 |---|---|---|---|
-| Cloud removal | QA60 bitmask | Cloud Score+, `cs` ≥ 0.40 | Cloud Score+, QA60 selectable |
-| Compositing | Median | `qualityMosaic("cs")` | Follows the method chosen |
-| Scene cloud filter | ≤ 30 | Defined as 10, unused on active path | QA60 path only |
-| Window | July to September | August to September | August to September |
-| Histogram `maxPixels` | 1e9 | 1e9 | 1e10 |
-| Class breaks | As tabulated above | Identical | Identical, editable |
-| Export | Step 9, 10 m to Drive | Present, `EXPORT = False` | Not implemented |
+| Platform | Earth Engine | Earth Engine | Browser, STAC and COGs |
+| Credentials | Google account | Google account | None |
+| Collection | `S2_SR_HARMONIZED` | `S2_SR_HARMONIZED` | `sentinel-2-l2a` on AWS |
+| Landsat | not used | not used | not reachable anonymously |
+| Cloud removal | QA60 bitmask | Cloud Score+, `cs` ≥ 0.40 | SCL classes |
+| Compositing | Median | `qualityMosaic("cs")` | Median |
+| Scene cloud filter | ≤ 30 | defined as 10, unused | 30, as a download filter |
+| Water mask | JRC GSW ≥ 50 | JRC GSW ≥ 50 | SCL class 6, majority |
+| Area projection | explicit UTM | explicit UTM | native UTM, no reprojection |
+| Histogram ceiling | `1e9` | `1e9` | none, every pixel counted |
+| AOI clip | ROI geometry | ROI geometry | rasterised polygon |
+| Indices, signs, breaks | — | — | identical |
 
-The QGIS and ArcGIS scripts agree with each other on method. They differ only in
-default dates: the QGIS script composites August to September, the ArcGIS one
-November to November, which is a dormant-season window and would trigger this
-tool's seasonal warning.
+## Known weaknesses
 
-## 12. Known limitations
-
-1. **No cloud-shadow mask.** Neither method addresses shadow explicitly.
-2. **Area scale mismatch.** 20 m reduction against 10 m export.
-3. **`qualityMosaic` seams.** Adjacent pixels may come from different dates.
-4. **Thresholds re-run everything.** Only classification depends on them, but
-   changing one currently rebuilds composites and histograms too.
-5. **No reprojection of uploaded vectors.** Shapefiles are assumed to be WGS84;
-   the `.prj` is not read.
-6. **Session expiry is inferred.** The one-hour token lifetime is assumed rather
-   than observed, because the client does not expose the real expiry.
+1. **SCL is coarser than Cloud Score+.** Thin cloud edges survive masking more
+   often, and the composite has no clarity score to rank on. This is the
+   headline difference and the reason to read the overpass counts.
+2. **The median needs four clear looks.** Below that the composite can move with
+   a single observation. Advisory before, binding now.
+3. **Water is per-scene, not multi-decadal.** Seasonal water is treated
+   differently from the Earth Engine build.
+4. **An AOI straddling a UTM zone loses the overpasses never tiled into the
+   chosen zone.** The run warns; splitting the area at the boundary is the
+   honest fix.
+5. **No Landsat, so no pre-2015 baseline.** Sentinel-2 starts in 2015 and
+   coverage is thinner before 2017.
+6. **The display warp is nearest-neighbour.** Areas are measured on the UTM grid
+   and are unaffected, but a heavily zoomed screenshot shows resampling.
 
 These are tracked with proposed fixes in [revision-notes.md](revision-notes.md).

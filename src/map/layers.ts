@@ -81,14 +81,23 @@ export class MapLayerManager {
   }
 
   /**
-   * Add an Earth Engine XYZ raster. Undisturbed pixels are already masked out
-   * server-side, so the tiles carry transparency and the basemap shows through
-   * wherever nothing was detected.
+   * Add a result raster.
+   *
+   * There is no tile server any more. The analysis runs in this tab, so each
+   * layer arrives as one already-painted image pinned to the four corners of
+   * the AOI. Undisturbed pixels are painted transparent, so the basemap shows
+   * through wherever nothing was detected, exactly as the masked tiles did.
    */
   addRaster(options: {
     key: string;
     name: string;
-    tileUrl: string;
+    dataUrl: string;
+    coordinates: [
+      [number, number],
+      [number, number],
+      [number, number],
+      [number, number],
+    ];
     visible: boolean;
     opacity?: number;
   }): void {
@@ -103,10 +112,11 @@ export class MapLayerManager {
     const draw = () => {
       try {
         map.addSource(sourceId, {
-          type: "raster",
-          tiles: [options.tileUrl],
-          tileSize: 256,
-          attribution: "Google Earth Engine / Copernicus Sentinel-2",
+          type: "image",
+          url: options.dataUrl,
+          coordinates: options.coordinates,
+          attribution:
+            "Copernicus Sentinel-2, processed by ESA, COGs by Element 84 on AWS Open Data",
         });
         map.addLayer({
           id: layerId,

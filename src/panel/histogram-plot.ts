@@ -1,5 +1,5 @@
 import { Breaks } from "../defaults";
-import { HistogramBin } from "../ee/analysis";
+import { HistogramBin } from "../analysis/deltas";
 import { svgEl } from "./dom";
 
 const WIDTH = 260;

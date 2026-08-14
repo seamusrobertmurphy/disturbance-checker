@@ -1,25 +1,21 @@
 import {
-  CLOUD_SCORE_BAND,
-  CLOUD_SCORE_PLUS_COLLECTION,
   DELTAS,
   DeltaId,
   HISTOGRAM_MAX,
-  HISTOGRAM_MAX_PIXELS,
   HISTOGRAM_MIN,
-  HISTOGRAM_SCALE,
   HISTOGRAM_STEPS,
-  S2_COLLECTION,
 } from "./defaults";
 import { formatHectares } from "./panel/dom";
 import { State, breaksDeviate } from "./state";
+import { EARTH_SEARCH_URL, S2_STAC_COLLECTION } from "./stac/search";
+import { CLOUD_MASKS } from "./raster/mask";
+import { GRID_RESOLUTION } from "./raster/grid";
 
 function describeAoi(state: State): string {
   if (!state.aoi) return "not set";
   switch (state.aoi.kind) {
     case "rectangle":
       return `rectangle W ${state.aoi.west} S ${state.aoi.south} E ${state.aoi.east} N ${state.aoi.north} (EPSG:4326)`;
-    case "asset":
-      return `Earth Engine asset ${state.aoi.assetId}`;
     case "geojson":
       return state.aoiLabel || "uploaded boundary";
   }
@@ -36,21 +32,25 @@ export function buildManifest(state: State, runAt: Date): string {
   lines.push("TUV SUD Canopy Disturbance Check");
   lines.push("Sentinel-2 NDVI / NDMI / NBR pre-post delta screening");
   lines.push("");
+  const mask = CLOUD_MASKS[state.maskId];
+
   lines.push(`Run at            ${runAt.toISOString()}`);
-  lines.push(`Earth Engine project  ${state.projectId}`);
   lines.push(`Area of interest  ${describeAoi(state)}`);
-  lines.push(`Collection        ${S2_COLLECTION}`);
-  if (state.cloudMethod === "cloud-score-plus") {
-    lines.push(
-      `Cloud removal     Cloud Score+ (${CLOUD_SCORE_PLUS_COLLECTION}), band "${CLOUD_SCORE_BAND}" >= ${state.clearThreshold}, qualityMosaic`,
-    );
-  } else {
-    lines.push(
-      `Cloud removal     QA60 cloud+cirrus bitmask, CLOUDY_PIXEL_PERCENTAGE < ${state.maxCloud}, per-pixel median`,
-    );
-  }
+  lines.push(`Catalogue         ${EARTH_SEARCH_URL}`);
+  lines.push(`Collection        ${S2_STAC_COLLECTION} (Sentinel-2 L2A COGs on AWS Open Data)`);
+  lines.push(`Radiometry        BOA offset removed where the catalogue reported it present`);
   lines.push(
-    `Histogram         fixedHistogram(${HISTOGRAM_MIN}, ${HISTOGRAM_MAX}, ${HISTOGRAM_STEPS}) at scale ${HISTOGRAM_SCALE}, maxPixels ${HISTOGRAM_MAX_PIXELS.toExponential()}`,
+    `Cloud removal     ${mask?.label ?? state.maskId}, cast shadow ${state.maskOptions.rejectCastShadow ? "rejected" : "kept"}, snow ${state.maskOptions.rejectSnow ? "rejected" : "kept"}`,
+  );
+  lines.push(
+    `Scene filter      eo:cloud_cover < ${state.maxCloud} percent, applied before download`,
+  );
+  lines.push(`Reduction         per-pixel median over surviving observations`);
+  lines.push(
+    `Histogram         ${HISTOGRAM_STEPS} fixed bins from ${HISTOGRAM_MIN} to ${HISTOGRAM_MAX}, computed on every pixel`,
+  );
+  lines.push(
+    `Working grid      native Sentinel-2 UTM, ${GRID_RESOLUTION} m, areas counted on that grid`,
   );
   lines.push("");
 
@@ -62,11 +62,25 @@ export function buildManifest(state: State, runAt: Date): string {
       lines.push(`  Post window   ${period.postStart} to ${period.postEnd}`);
     }
     lines.push(
-      `  Scenes        ${result.preSceneCount} pre, ${result.postSceneCount} post`,
+      `  Overpasses    ${result.preObservations.length} pre, ${result.postObservations.length} post`,
     );
     lines.push(
-      `  Area basis    ${result.utmCrs}, AOI ${formatHectares(result.aoiAreaHa)} ha`,
+      `  Pre dates     ${result.preObservations.map((o) => o.date).join(", ") || "none"}`,
     );
+    lines.push(
+      `  Post dates    ${result.postObservations.map((o) => o.date).join(", ") || "none"}`,
+    );
+    lines.push(
+      `  Area basis    EPSG:${result.grid.epsg}, ${result.grid.resolution} m grid, observed ${formatHectares(result.aoiAreaHa)} ha`,
+    );
+    if (result.thinPixels > 0) {
+      lines.push(
+        `  Thin coverage ${result.thinPixels} pixel(s) had fewer clear looks than the stability floor`,
+      );
+    }
+    for (const warning of result.warnings) {
+      lines.push(`  WARNING       ${warning}`);
+    }
     lines.push("");
 
     for (const id of Object.keys(DELTAS) as DeltaId[]) {
@@ -127,7 +141,7 @@ export function buildManifest(state: State, runAt: Date): string {
   }
 
   lines.push(
-    "Map tiles are served against a short-lived Earth Engine access token and are not archived by this tool. Re-run from these parameters to regenerate them.",
+    "Imagery is Copernicus Sentinel-2 L2A, processed by ESA, distributed as cloud-optimised GeoTIFFs by Element 84 on AWS Open Data. Every pixel was read and reduced in the browser; no account, credential or server-side compute was involved. Re-running from these parameters reproduces the result.",
   );
 
   return lines.join("\n");

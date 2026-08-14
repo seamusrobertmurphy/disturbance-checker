@@ -6,15 +6,16 @@ what changed underneath.
 
 ## The short version
 
-The analysis has not changed. It never ran on your machine in the first place.
+In the QGIS workflow nothing ran on your machine. Every composite, index, delta,
+histogram and classification executed on Google's servers, and QGIS was an
+authentication shell, a code pane and a tile viewer.
 
-Every composite, index, delta, histogram and classification in the QGIS workflow
-executed on Google's servers. QGIS was an authentication shell, a code pane and
-a tile viewer. Once you notice that, the browser version stops looking like a
-rewrite and starts looking like the same script with a different front end.
+In this tool nothing runs on anyone's server. The browser reads Sentinel-2
+pixels straight out of a public archive and does the arithmetic itself.
 
-What has gone is the apparatus needed to make a desktop GIS capable of doing
-what a browser does natively.
+So the work has moved twice, and it now sits closer to you than it ever did in
+the desktop GIS. What went with it is every piece of apparatus that existed to
+obtain and hold a Google credential.
 
 ## What the old workflow required
 
@@ -52,8 +53,8 @@ the left. Everything to the left of this point was setup.*
 |---|---|
 | Install Python packages into the QGIS Python | Nothing to install |
 | Three QGIS plugins, activated in order | One plugin, one toggle |
-| Bind the project in plugin settings | A field in the panel, or a URL parameter |
-| OAuth through the system browser, cached 7 days | A sign-in button, one hour, re-run when it lapses |
+| Bind the project in plugin settings | Nothing to bind |
+| OAuth through the system browser, cached 7 days | No account of any kind |
 | Paste a script and edit four constants | Form fields with validation |
 | Read the histogram in a matplotlib window | Histogram in the panel with draggable breaks |
 | Record thresholds by hand in a workbook | Run manifest, generated |
@@ -67,13 +68,12 @@ sections. The class breaks in `classify_delta_*()` became section 4. The
 
 Deliberately identical, so results are comparable across the two:
 
-- `COPERNICUS/S2_SR_HARMONIZED`, divided by 10000, clipped to the ROI.
-- Cloud Score+ with the `cs` band at 0.40, then `qualityMosaic`.
+- Sentinel-2 L2A surface reflectance, divided by 10000, clipped to the ROI.
 - NDVI on B8/B4, NDMI on B8/B11, NBR on B8A/B12.
-- The JRC Global Surface Water mask at 50% occurrence, `unmask(1)`, applied at
-  the delta stage.
+- Water masked at the delta stage, not on the composite, so the RGB layers keep
+  their water for context.
 - dNDVI and dNDMI as pre minus post; dNBR as post minus pre.
-- `fixedHistogram(-0.5, 0.8, 130)` at scale 20.
+- 130 fixed histogram bins from -0.5 to 0.8, at 20 m.
 - The class breaks, unchanged, including the different dNDMI ramp.
 - The visualisation palettes and ranges, including the RGB gamma of 1.2.
 
@@ -82,13 +82,26 @@ the SOP PDF, the QGIS script and the ArcGIS script disagree with each other.
 
 ## What is different, and why
 
-**Cloud Score+ is the default, not QA60.** Both production scripts switched to
-it; the SOP PDF still documents QA60. The tool follows the scripts and keeps
-QA60 selectable so an older result can be reproduced.
+**Cloud masking is weaker, and this is the one that matters.** The scripts rank
+every pixel on Cloud Score+ and keep the single clearest observation. That score
+is a Google product and exists only inside Earth Engine. This build masks on the
+Sen2Cor scene classification and takes a median instead, which is the SOP's own
+documented alternative. Thin cloud survives more often, and the SOP's floor of
+four clear scenes has gone from advisory to binding. Read the overpass counts.
 
-**Histogram `maxPixels` is 1e10, not 1e9.** At 1e9 a wide area silently returns
-a truncated histogram, which looks plausible and is wrong. The higher limit
-fails loudly instead.
+**Water comes from the scene classification, not JRC Global Surface Water.** GSW
+is an Earth Engine asset with no open equivalent. The two disagree on seasonal
+water.
+
+**The histogram has no ceiling.** The scripts reduce to a `maxPixels` limit and
+truncate past it, which the SOP records happening silently at 1e9 on wide areas.
+Here every pixel is counted, so there is nothing to truncate and no limit to
+raise.
+
+**Areas are counted, not integrated.** The grid is the native Sentinel-2 UTM
+grid, so a pixel is exactly 20 by 20 m and hectares are a multiplication. The
+scripts had to pass an explicit projection to every area reduction to avoid
+measuring on a degree grid.
 
 **Bounds cannot be reversed.** The script's `ee.Geometry.Rectangle` accepts
 reversed coordinates and returns an empty geometry with no error. The tool
@@ -106,16 +119,19 @@ Drive. That is not implemented here, and it is the largest deliberate gap.
 **Export.** Batch export to Drive or Cloud Storage, at 10 m, outliving the
 session. If you need archived rasters, run the script.
 
+**Cloud Score+.** The best cloud masking available for Sentinel-2, and it is not
+reachable from a browser. This is the real cost of the move.
+
 **Arbitrary analysis.** The code pane runs any Earth Engine expression. The
 panel runs one analysis with parameters. For anything outside the SOP, the
 script is the tool.
 
-**Offline project state.** A QGIS project holds exported GeoTIFFs on disk and
-opens without Earth Engine. Browser sessions hold live tiles that expire in
-about an hour.
+**Landsat and anything before 2015.** The USGS archive is requester-pays, so a
+credential-free tool cannot read it.
 
-The two are complements. The browser tool is for screening quickly, repeatedly
-and with an audit record. The script is for the archival deliverable.
+The two are complements. The browser tool is for screening quickly, repeatedly,
+with an audit record and without an account. The script is for the archival
+deliverable and for the cases where masking quality decides the answer.
 
 ## Where the original documents live
 

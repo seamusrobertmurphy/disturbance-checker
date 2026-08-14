@@ -6,9 +6,14 @@ as a browser-based [GeoLibre](https://github.com/opengeos/GeoLibre) plugin.
 This is the TÜV SÜD SOP *Canopy Disturbance Checks for ACR IFM Verification*
 implemented as a panel. It produces the same classified rasters and histograms
 as the QGIS and geemap workflow it replaces, with no QGIS install, no Python
-environment, and no plugin setup. Composites, indices, deltas, histograms and
-classification all run on Google's servers; the browser assembles the
-computation and displays the result.
+environment and no plugin setup.
+
+**It needs no account.** Imagery is read straight from the Copernicus Sentinel-2
+L2A archive published as cloud-optimised GeoTIFFs on AWS Open Data, found
+through Element 84's public Earth Search catalogue. Both answer anonymous
+requests, so there is no sign-in, no Cloud project, no OAuth client, no
+test-user list and no billing. Composites, indices, deltas, histograms and
+classification are all computed in the browser tab.
 
 Outputs complement, but do not replace, ground plots and developer monitoring
 reports.
@@ -20,22 +25,23 @@ inside the app, reachable from the **Disturbance Check** menu in the toolbar and
 from the Help footer at the bottom of the tool panel.
 
 Start with [Using the tool](docs/using-the-tool.md) if you are running a check,
-[Earth Engine setup](docs/earth-engine-setup.md) if you are setting it up.
+[Data and access](docs/data-access.md) if you want to know where the imagery
+comes from.
 
 ## The panel
 
 Seven sections, in order:
 
-1. **Earth Engine** — the Cloud project compute bills to.
-2. **Area of interest** — typed bounds, an Earth Engine asset, pasted GeoJSON,
-   or an uploaded project boundary.
+1. **Imagery** — where the data comes from and how cloud is being removed.
+2. **Area of interest** — typed bounds, pasted GeoJSON, or an uploaded project
+   boundary.
 3. **Reporting periods** — pre and post windows, one or many, plus the cloud
    ceiling.
 4. **Severity thresholds** — the Low, Moderate and High cut points for each of
    the three differenced indices, editable before the first run.
 5. **Site data** — project boundary, streamside management zones, and plot
    points, uploaded as zipped shapefile, GeoJSON or KML.
-6. **Results** — scene counts, histograms with draggable breaks, class areas.
+6. **Results** — overpass counts, histograms with draggable breaks, class areas.
 7. **Findings** — the run manifest.
 
 ## How it works
@@ -43,18 +49,23 @@ Seven sections, in order:
 The operator sets an area of interest and one or more reporting periods. The
 panel then, per period:
 
-1. Builds cloud-filtered median composites from `COPERNICUS/S2_SR_HARMONIZED`
-   for the pre and post windows, masking QA60 cloud and cirrus bits.
-2. Derives NDVI, NDMI and NBR, and the three deltas, applying the JRC Global
-   Surface Water mask at the delta stage so the RGB layers keep water for
-   context.
-3. Reduces each delta to a fixed histogram and reads its shape.
-4. Classifies each delta into Low, Moderate and High.
-5. Adds six layers to GeoLibre, with the classified rasters on top and the
-   continuous deltas and RGB composites beneath, hidden but available.
-6. Computes per-class areas on the project UTM zone.
-7. Assembles a run manifest recording every parameter, every threshold, and
-   every diagnostic raised.
+1. Asks Earth Search which Sentinel-2 scenes cover the area in each window, and
+   folds them into overpasses so a scene published in two UTM zones is not
+   counted twice.
+2. Reads only the pixels it needs, by HTTP range request, out of the
+   cloud-optimised GeoTIFFs, correcting the +1000 DN baseline offset on any
+   scene the catalogue reports still carrying it.
+3. Masks cloud, shadow and snow on the scene classification layer, then reduces
+   each window to a per-pixel median.
+4. Derives NDVI, NDMI and NBR, and the three deltas, masking water at the delta
+   stage so the RGB layers keep water for context.
+5. Accumulates a fixed histogram over every pixel and reads its shape.
+6. Classifies each delta into Low, Moderate and High.
+7. Counts per-class hectares on the native Sentinel-2 UTM grid, clipped to the
+   boundary polygon rather than its bounding box.
+8. Paints twelve layers and adds them to GeoLibre, classified rasters on top.
+9. Assembles a run manifest recording every parameter, every threshold and every
+   diagnostic raised.
 
 Nothing about the analysis is hidden in the tool. Every constant traces to a
 section of the SOP in [`src/defaults.ts`](src/defaults.ts).
@@ -109,15 +120,15 @@ memory:
 Moving a class break off its default marks the delta as adjusted and requires a
 written justification, which is recorded in the run manifest.
 
-## Sessions are short by design
+## Nothing expires
 
-Earth Engine map tiles are served against an access token that expires in about
-an hour. Rather than hide that, the panel shows the remaining session time. When
-it lapses, layers are marked stale and a re-run regenerates them from the
-recorded parameters in one click.
+Earlier versions served map tiles against an access token that lapsed after an
+hour, and the layers went with it. The layers are now images the tab painted, so
+they last as long as the tab does.
 
-No tile URL is ever written into a saved project. Only parameters persist, which
-means a saved project is a description of a check rather than a snapshot of one.
+Only parameters are saved into a project, never results, which means a saved
+project is a description of a check rather than a snapshot of one. Re-running it
+costs seconds and needs no credentials.
 
 ## Deployment
 
@@ -127,10 +138,8 @@ from GitHub Pages at
 vendored here; the deploy workflow checks it out at a pinned tag, drops in the
 built plugin, builds, and publishes.
 
-Before the first deploy you need a Cloud project and an OAuth client. See
-[`docs/earth-engine-setup.md`](docs/earth-engine-setup.md), which covers
-registering the client, granting colleagues access so their compute bills to
-your project, and where the client ID goes.
+No secrets are required. Set Pages to build from GitHub Actions and push; see
+[`docs/first-run.md`](docs/first-run.md).
 
 Bump `GEOLIBRE_REF` in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)
 to move to a newer GeoLibre.
@@ -152,9 +161,9 @@ adding or updating the folder.
 
 The plugin is one self-contained ES module because GeoLibre's external-plugin
 loader executes the entry through a blob import and does not resolve relative
-imports inside the bundle. The Earth Engine client is bundled from its
-`build/browser.js` browser build, which avoids the Node-only `googleapis`
-dependency in the default entry point.
+imports inside the bundle. Its three runtime dependencies are `geotiff` for
+reading cloud-optimised GeoTIFFs, `proj4` for the UTM transforms and `shpjs`
+for boundary imports, all MIT.
 
 ## Licence
 

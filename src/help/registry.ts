@@ -1,4 +1,4 @@
-import earthEngineSetup from "../../docs/earth-engine-setup.md";
+import dataAccess from "../../docs/data-access.md";
 import firstRun from "../../docs/first-run.md";
 import fromQgis from "../../docs/from-qgis.md";
 import interpretingResults from "../../docs/interpreting-results.md";
@@ -71,12 +71,12 @@ export const GUIDES: Guide[] = [
     html: methods,
   },
   {
-    id: "earth-engine-setup",
-    title: "Earth Engine setup",
+    id: "data-access",
+    title: "Data and access",
     summary:
-      "The OAuth client, the Cloud project and billing, granting colleagues access, and where the client ID goes.",
+      "Where the imagery comes from, the two hosts a run needs to reach, and why there is nothing to sign in to.",
     audience: "setup",
-    html: earthEngineSetup,
+    html: dataAccess,
   },
   {
     id: "first-run",

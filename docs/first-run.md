@@ -1,190 +1,99 @@
-# First live run
+# First run
 
-The Earth Engine side of this tool has never executed. Typecheck, bundling and
-the smoke test all pass, but none of them touch Google's servers: they prove the
-plugin loads and the constants are right, not that the composite builds or the
-reducers return what the code expects. This document is the runbook for finding
-out.
-
-## Pick a path
-
-| Path | Setup | Best for |
-|------|-------|----------|
-| **A. Hosted GeoLibre, install the zip** | ~15 min, no infrastructure | The very first run |
-| **B. Local GeoLibre dev server** | A full monorepo install | Iterating on the panel |
-| **C. Your GitHub Pages deploy** | Secrets, Pages, a push | Colleagues using it for real |
-
-Start with A. It reaches a live Earth Engine call in the fewest steps, and
-everything you learn transfers to C unchanged.
-
-## Path A: hosted GeoLibre
-
-### 1. Register the OAuth client
-
-Follow [`earth-engine-setup.md`](earth-engine-setup.md), with one difference.
-Because you are testing inside a GeoLibre deployment you do not own, the
-authorized JavaScript origin is theirs, not yours:
+## Send them the link
 
 ```
-https://geolibre.app
+https://seamusrobertmurphy.github.io/disturbance-checker/
 ```
 
-Add your own Pages origin at the same time so you never have to come back:
+That is the whole procedure for a colleague. No account, no install, no trust
+prompt, no permission to be granted. The panel is already there when the page
+loads. If you want to understand what is behind that, read
+[data-access.md](data-access.md); nothing in it is needed to run a check.
 
-```
-https://seamusrobertmurphy.github.io
-http://localhost:5173
-```
+## Run a check
 
-Google permits origins you do not control. Verification applies to the consent
-screen, not to this list.
+1. **Section 2, area of interest.** Pan the map to a project area and press
+   **Use current map view**, or load a boundary file. Keep the first area
+   small, a few thousand hectares, so a mistake surfaces in seconds.
+2. **Section 3, periods.** Leave the August to September defaults and set the
+   pre and post years.
+3. **Section 4, thresholds.** Leave the SOP breaks alone on a first run.
+4. Press **Run check**.
 
-### 2. Build the zip
+A run over a few thousand hectares takes roughly fifteen seconds on a decent
+connection. Almost all of that is downloading imagery, so it scales with the
+number of overpasses in the two windows rather than with the size of the area.
 
-```bash
-cd /Volumes/PortableSSD/Github/disturbance-checker
-npm run package
-```
+## What to watch
 
-This writes `build/tuvsud-disturbance-check.zip`, about 285 kB, with
-`plugin.json` at the archive root, which is the layout the installer requires.
-
-### 3. Open GeoLibre with your credentials in the URL
-
-This build has no client ID compiled in, so supply both values as query
-parameters:
-
-```
-https://geolibre.app/demo/?gee_client_id=YOUR_CLIENT_ID&ee_project_id=YOUR_PROJECT
-```
-
-`ee_project_id` pre-fills and confirms the project, replacing the
-`murphys-deforisk` placeholder. Leave it off if you would rather type the
-project into the panel and watch the placeholder guard work.
-
-### 4. Install the plugin
-
-**Settings → Manage Plugins → Settings → Install from file**, then choose the
-zip. GeoLibre validates the manifest, unpacks the archive in the browser and
-stores it in IndexedDB. There is no network fetch and no CORS involved.
-
-### 4b. Activate it
-
-**Nothing appears yet, and that is expected.** Installing *registers* a plugin;
-it does not *activate* it. GeoLibre rejects `activeByDefault` on external
-plugins outright, so there is no way for a plugin to switch itself on.
-
-Open the **Plugins** menu in the top toolbar and click **Disturbance Check**.
-The menu lists one toggle per registered plugin under an "Activate plugin"
-heading.
-
-The panel then takes the Style panel slot on the right, with the Layer panel
-still visible beside it. A **Disturbance Check** menu also appears in the
-toolbar, holding the documentation library.
-
-If the plugin is not in the Plugins menu at all, the install did not take.
-Re-open Manage Plugins and check it is listed under Install from file.
-
-### 5. Run a check
-
-1. Confirm the Cloud project in section 1.
-2. Section 2: pan the map to a project area and press **Use current map view**,
-   or upload a boundary. Keep the first test area small, a few thousand
-   hectares, so a failure surfaces in seconds rather than minutes.
-3. Section 3: leave the July to September defaults, set the pre and post years.
-4. Section 4: leave the SOP thresholds alone on the first run.
-5. Press **Run check**. A Google sign-in popup appears on first use.
-
-## What to watch, in order
-
-The run proceeds through distinct stages, and each fails differently. The
-progress line under the Run button names the stage it is in.
+The progress line under the Run button names the stage.
 
 | Stage | Progress text | If it fails |
 |-------|---------------|-------------|
-| Sign-in | Signing in to Earth Engine | Origin or consent problem |
-| Initialise | Signing in to Earth Engine | Project, billing or API problem |
-| Geometry | Resolving area of interest | Bad AOI, or an asset you cannot read |
-| Composites | `RP1: building composites` | Date or collection problem |
-| Deltas | `RP1: computing deltas` | Band naming |
-| Per index | `RP1: dNDVI histogram and classification` | Reducer or quota problem |
-| Layers | Adding layers | MapLibre or registration problem |
+| Search | `searching the catalogue` | Network, or a window with no scenes |
+| Read and composite | `block 1 of N, reading M overpasses` | Network, or a blocked host |
+| Draw | `drawing layers` | Browser memory on a very large area |
 
 ### Success looks like
 
-Six layers per period in the Layer panel. Reading top down: three classified
-rasters visible, three continuous deltas hidden, two RGB composites hidden. Over
-the basemap you should see coloured cells only where disturbance was detected,
-with everything undisturbed transparent.
+Twelve layers per period in the Layer panel. Reading top down: three classified
+rasters visible, three continuous deltas hidden, four single-date index layers
+hidden, two RGB composites hidden. Over the basemap you should see coloured
+cells only where disturbance was detected, with everything undisturbed
+transparent.
 
-Section 6 shows scene counts, three histograms with draggable break handles, and
-a class-area table in hectares on a UTM projection. Section 7 has the manifest.
+Section 6 shows overpass counts, three histograms with draggable break handles,
+and a class-area table in hectares. Section 7 has the manifest.
 
-### Known-plausible failures
+## Read the overpass count first
 
-These are the specific things most likely to break, and what each looks like.
+This matters more in this build than it did in the last one. The composite is a
+per-pixel median over the observations that survive cloud masking, and a median
+needs enough clear looks to be stable. The SOP puts that floor at four.
 
-**`redirect_uri_mismatch` or a popup that closes immediately.** The origin is not
-authorized, or the popup was blocked. Sign-in is deliberately behind the Run
-button because popups need a user gesture.
+The panel reports how many overpasses each window kept, and raises a diagnostic
+when either falls below four or when a meaningful share of pixels had fewer
+clear looks than that. Treat those as blocking. Widen the window or raise the
+cloud ceiling in section 3 and run again before reading anything into the map.
 
-**`Earth Engine client library not initialized`, or 403 on every call.** No
-billing account, the Earth Engine API is not enabled, or the signed-in user
-lacks `serviceUsageConsumer` on the project.
+## Failures you may actually see
 
-**`ee.initialize` never calls back.** The client is invoked as
-`ee.initialize(null, null, success, error, null, project)`, passing the Cloud
-project as the sixth argument. If the installed client version orders these
-differently the call will hang rather than throw. Symptom: the panel sits on
-"Signing in to Earth Engine" forever. Fix is in `src/ee/api.ts`.
+**"The imagery catalogue could not be reached."** The network, or a corporate
+proxy. Two hosts have to be reachable over HTTPS:
+`earth-search.aws.element84.com` and
+`sentinel-cogs.s3.us-west-2.amazonaws.com`.
 
-**Empty histograms with layers that still render.** The histogram is read from
-`reduceRegion` keyed by band name, and each delta is renamed to `dNDVI`,
-`dNDMI` or `dNBR` as the last operation before use. A rename that does not stick
-returns an empty array, and `analyseHistogram` reports the empty shape.
+**"The catalogue returned 0 pre-period and N post-period scenes."** The window
+is too narrow, the cloud ceiling too strict, or the years are wrong. Sentinel-2
+starts in 2015 and coverage is thinner before 2017.
 
-**`User memory limit exceeded` on the histogram.** The SOP warns about this for
-wide areas. The histogram runs at scale 20 with `maxPixels` 1e10. Shrink the
-AOI, or add `bestEffort: true` in `computeHistogram`.
+**"The catalogue is rate limiting this connection."** Wait a minute. Earth
+Search is a free public service.
 
-**`undefined is not an object (evaluating 'ee.Reducer.sum')`.** Two copies of
-the Earth Engine client in one page, fighting over a global.
+**An overpass warning about UTM zones.** The area straddles a zone boundary far
+enough that some acquisitions were never tiled into the zone the run chose.
+Splitting the area at the boundary and running each half is the honest fix.
 
-Classes such as `ee.Reducer` do not exist in the client bundle at all; grep it
-for "Reducer" and there are no matches. They are built at initialise time by
-`initializeGeneratedClasses_()`, which installs them like this:
+**Hectares that look like the bounding box.** Only possible if a loaded boundary
+contained no polygon, which raises its own warning. A rectangle AOI is its own
+bounding box by definition.
 
-```js
-var exportedEE = goog.global.ee;          // window.ee
-exportedEE[name] = ee.makeClass_(name);
-```
+## Deploying
 
-The generated classes go onto `window.ee`, but the module hands callers a
-different reference through `module.exports = ee`. GeoLibre's host app bundles
-its own copy of the client and owns `window.ee`, so a plugin that initialises
-its own copy installs `Reducer` on the *host's* object and then reads from its
-own, where it is still undefined.
+The site is live at
+<https://seamusrobertmurphy.github.io/disturbance-checker/>, rebuilt by GitHub
+Actions on every push to `main`. Recreating it on a fork takes two steps:
 
-`initialise()` now points `window.ee` at its own instance for the duration of
-the call and restores the previous value afterwards, so the generated classes
-land where they are read and the host's Earth Engine panel is untouched.
+1. **Settings → Pages**, set Source to **GitHub Actions**.
+2. `git push -u origin main`.
 
-**Class areas all zero.** The grouped reducer assumes band 0 is area and band 1
-is class, from `ee.Image.pixelArea().divide(10000).addBands(classified)`. If the
-band order differs, `groupField: 1` reads the wrong band.
+No secrets are involved any more. The workflow builds the plugin, runs the
+smoke test, checks out GeoLibre at the pinned `GEOLIBRE_REF`, drops the plugin
+in, builds with `GEOLIBRE_APP_BASE=/disturbance-checker/`, and fails loudly if
+the plugin is missing from the output.
 
-**Layers appear but the panel toggles do nothing.** Visibility for
-externally-registered native layers is driven by `nativeLayerIds`. If the ids
-registered do not match the ids actually on the map, the panel and the map
-disagree.
-
-**A re-run stacks layers instead of replacing them.** This was a real defect
-before the layer manager existed. If it reappears, `removeByPrefix` is not
-matching the keys used by `syncLayers`.
-
-## Path B: local dev server
-
-Better for iterating on the panel, at the cost of a full monorepo install.
+## Running it locally
 
 ```bash
 cd /Volumes/PortableSSD/Github/GeoLibre
@@ -199,25 +108,5 @@ cd /Volumes/PortableSSD/Github/GeoLibre
 npm run dev
 ```
 
-Then open `http://localhost:5173/?gee_client_id=...&ee_project_id=...`.
-
-Plugin discovery happens when the dev server starts, so restart it after every
-`npm run package`. Copying the folder again is not enough on its own for a new
-plugin id, though updating an existing one is picked up on reload.
-
-## Path C: your Pages deploy
-
-Done on 2026-08-11: the site is live at
-<https://seamusrobertmurphy.github.io/disturbance-checker/> with the client ID
-compiled in, and sign-in was confirmed working. The steps are kept for
-re-creating the setup on a fork or a new repository.
-
-1. **Settings → Secrets and variables → Actions**, add `GEE_OAUTH_CLIENT_ID`.
-2. **Settings → Pages**, set Source to **GitHub Actions**.
-3. `git push -u origin main`.
-
-The workflow builds the plugin, runs the smoke test, checks out GeoLibre at the
-pinned `GEOLIBRE_REF`, drops the plugin in, builds with
-`GEOLIBRE_APP_BASE=/disturbance-checker/`, and fails loudly if the plugin is
-missing from the output. Colleagues then open the Pages URL and the panel is
-already there, with no install step and no trust prompt.
+Then open `http://localhost:5173/`. Plugin discovery happens when the dev
+server starts, so restart it after every `npm run package`.

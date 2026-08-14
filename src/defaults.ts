@@ -2,46 +2,27 @@
 // Checks for ACR IFM Verification". Changing a value changes what the tool will
 // certify, so each carries its provenance.
 
-export const S2_COLLECTION = "COPERNICUS/S2_SR_HARMONIZED";
-
-// SOP Pre-2022 baseline: S2_SR carries a +1000 DN offset on post-Jan-2022 scenes
-// that propagates a ~0.04 false dNDVI signal. HARMONIZED back-corrects it.
+/**
+ * DN to reflectance.
+ *
+ * SOP Pre-2022 baseline: from processing baseline 04.00 the L2A products carry
+ * a +1000 DN offset that propagates a false dNDVI of roughly 0.04 across a
+ * window straddling January 2022. Earth Engine's HARMONIZED collection undid
+ * it server-side. The catalogue this build reads reports per scene whether the
+ * offset has been removed, and src/stac/search.ts acts on that report, so the
+ * correction is made from evidence rather than from a date.
+ */
 export const S2_SCALE_DIVISOR = 10000;
 
 /**
- * How cloud is removed before compositing.
+ * Scene-level cloud ceiling.
  *
- * "cloud-score-plus" is the method both production scripts
- * (TUVSUD_DisturbanceCheck-QGIS.py and -ArcGIS.py) actually run. It links the
- * Cloud Score+ collection, masks per pixel on the `cs` quality band, then takes
- * a qualityMosaic on that band, which selects the single clearest observation
- * per pixel rather than averaging.
- *
- * "qa60-median" is the older path. It survives in both scripts, commented out in
- * the QGIS one and labelled "legacy" in the ArcGIS one, and it is what the SOP
- * PDF documents. Kept selectable so a historical result can be reproduced.
+ * Under Cloud Score+ the production scripts defined MAX_CLOUD and never
+ * applied it, because per-pixel masking made a scene filter pointless. It
+ * matters again for a different reason: every scene kept is downloaded, so
+ * this is what keeps a run to seconds. Masking is still per pixel.
  */
-export type CloudMethod = "cloud-score-plus" | "qa60-median";
-
-export const DEFAULT_CLOUD_METHOD: CloudMethod = "cloud-score-plus";
-
-// Cloud Score+ (production path).
-export const CLOUD_SCORE_PLUS_COLLECTION =
-  "GOOGLE/CLOUD_SCORE_PLUS/V1/S2_HARMONIZED";
-export const CLOUD_SCORE_BAND = "cs";
-/** Per-pixel clarity floor. 0.50 to 0.65 is stricter and keeps fewer pixels. */
-export const DEFAULT_CLEAR_THRESHOLD = 0.4;
-
-// QA60 legacy path: cloud (bit 10) and cirrus (bit 11).
-export const QA60_CLOUD_BIT = 10;
-export const QA60_CIRRUS_BIT = 11;
-
-/**
- * Scene-level cloud ceiling, used by the legacy QA60 path only. Cloud Score+
- * masks per pixel and needs no scene filter, which is why the production
- * scripts define MAX_CLOUD but never apply it on the active path.
- */
-export const DEFAULT_MAX_CLOUD = 10;
+export const DEFAULT_MAX_CLOUD = 30;
 
 // Production scripts use August to September for both windows. The SOP PDF says
 // July to September; the scripts are narrower and are what actually runs.
@@ -52,23 +33,25 @@ export const DEFAULT_WINDOW_END_MONTH_DAY = "09-01";
 // below ~4 scenes.
 export const MIN_STABLE_SCENE_COUNT = 4;
 
-// SOP Step 4: JRC GSW occurrence band, applied at the delta stage so the RGB
-// layers retain water for visual context. unmask(1) is critical, without it
-// pixels outside the GSW footprint become NoData in every delta.
-export const GSW_IMAGE = "JRC/GSW1_4/GlobalSurfaceWater";
-export const GSW_OCCURRENCE_THRESHOLD = 50;
-
-// SOP Step 6 histogram. fixedHistogram(-0.5, 0.8, 130) at scale 20 (Sentinel-2
-// SWIR native resolution). maxPixels is raised from the SOP's 1e9 to 1e10
-// because the SOP itself records that 1e9 truncates silently on large ROIs.
+// SOP Step 6 histogram: fixedHistogram(-0.5, 0.8, 130).
+//
+// The SOP's maxPixels ceiling is gone rather than raised. It existed because
+// Earth Engine sampled a reduction and truncated silently past a limit, which
+// the SOP itself records happening at 1e9 on large ROIs. This build reads every
+// pixel of the working grid, so there is no sample to truncate.
 export const HISTOGRAM_MIN = -0.5;
 export const HISTOGRAM_MAX = 0.8;
 export const HISTOGRAM_STEPS = 130;
-export const HISTOGRAM_SCALE = 20;
-export const HISTOGRAM_MAX_PIXELS = 1e10;
 
-export const AREA_SCALE = 20;
-export const AREA_MAX_PIXELS = 1e10;
+/**
+ * Working resolution, in metres.
+ *
+ * 20 m, the SOP's scale for both the histogram and the area reductions, and the
+ * native resolution of B11, B12 and SCL. Water is no longer masked from JRC
+ * Global Surface Water, which has no anonymous COG equivalent, but from the
+ * scene classification's own water class, combined across the window.
+ */
+export const ANALYSIS_SCALE = 20;
 
 export type DeltaId = "dNDVI" | "dNDMI" | "dNBR";
 
@@ -157,26 +140,7 @@ export const RGB_VIS = {
   gamma: 1.2,
 };
 
-// SOP Step 2.1: Earth Engine refuses any compute call against the modern API
-// without a bound Cloud project. This placeholder is shown on launch and must be
-// replaced by the operator with their own project ID.
-export const PLACEHOLDER_EE_PROJECT = "murphys-deforisk";
-
-// GeoLibre's own public OAuth client, the same one its built-in Earth Engine
-// panel signs in with (packages/plugins/src/plugins/earth-engine-auth.ts). When
-// this plugin runs inside a GeoLibre deployment, the origin is already on that
-// client's authorized list, so sign-in works with no Cloud console setup at all.
-//
-// Override it with VITE_GEE_OAUTH_CLIENT_ID at build time, or ?gee_client_id at
-// runtime. A self-hosted deployment on your own domain needs its own client,
-// because GeoLibre's does not authorize your origin.
-export const FALLBACK_OAUTH_CLIENT_ID =
-  "141292844612-gitmgm28jkmkujonfkrkvdaqjiqt6qkf.apps.googleusercontent.com";
-
-// Only the Earth Engine scope is requested. The Cloud Storage scope
-// (devstorage.full_control) that the Code Editor also asks for is a *restricted*
-// scope: it makes the consent screen more alarming, and it would drag any future
-// External verification into Google's restricted-scope review. Nothing here
-// needs it, because compute, getMap and reduceRegion all run under the Earth
-// Engine scope alone. Add it back only alongside export to Cloud Storage.
-export const EE_SCOPES = ["https://www.googleapis.com/auth/earthengine"];
+// SOP Step 2.1 required a billed Cloud project and a signed-in Google account
+// before any compute call would run. Neither exists in this build. The imagery
+// and the catalogue are both open, so there is no account, no project, no
+// OAuth client and no consent screen.

@@ -23,9 +23,8 @@ bottom of the tool panel.
 
 ## For whoever sets it up
 
-5. [Earth Engine setup](earth-engine-setup.md) — registering the OAuth client,
-   the Cloud project and billing, granting colleagues access, and where the
-   client ID goes.
+5. [Data and access](data-access.md) — where the imagery comes from, the two
+   hosts a run needs to reach, and why there is nothing to sign in to.
 6. [First run](first-run.md) — the three ways to reach a live run, what each
    stage looks like, and the failures most likely to appear.
 

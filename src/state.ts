@@ -2,20 +2,20 @@ import {
   Breaks,
   DELTAS,
   DeltaId,
-  CloudMethod,
-  DEFAULT_CLEAR_THRESHOLD,
-  DEFAULT_CLOUD_METHOD,
   DEFAULT_MAX_CLOUD,
   DEFAULT_WINDOW_END_MONTH_DAY,
   DEFAULT_WINDOW_START_MONTH_DAY,
-  PLACEHOLDER_EE_PROJECT,
 } from "./defaults";
 import { Diagnostic, HistogramAnalysis } from "./diagnostics";
-import { Aoi, Period, PeriodResult } from "./ee/analysis";
+import { Aoi, Period, PeriodResult } from "./analysis/run";
+import {
+  DEFAULT_MASK_ID,
+  DEFAULT_MASK_OPTIONS,
+  type MaskOptions,
+} from "./raster/mask";
 
 export type RunStatus =
   | "idle"
-  | "connecting"
   | "running"
   | "complete"
   | "stale"
@@ -36,17 +36,13 @@ export interface ContextLayer {
 }
 
 export interface State {
-  projectId: string;
-  /** The placeholder must be replaced before any Earth Engine call is made. */
-  projectConfirmed: boolean;
-  signedIn: boolean;
-
   aoi: Aoi | null;
   aoiLabel: string;
   periods: Period[];
   maxCloud: number;
-  cloudMethod: CloudMethod;
-  clearThreshold: number;
+  /** Which cloud mask is in force. Only the SCL mask exists today. */
+  maskId: string;
+  maskOptions: MaskOptions;
 
   context: Record<ContextRole, ContextLayer | null>;
 
@@ -88,18 +84,12 @@ export function defaultBreaks(): Record<DeltaId, Breaks> {
 export function createState(): State {
   const thisYear = new Date().getFullYear();
   return {
-    // SOP Step 2.1's example project is shown deliberately, so the operator sees
-    // the shape of the value they must supply and cannot run against it.
-    projectId: PLACEHOLDER_EE_PROJECT,
-    projectConfirmed: false,
-    signedIn: false,
-
     aoi: null,
     aoiLabel: "",
     periods: [defaultPeriod("RP1", thisYear - 2, thisYear - 1)],
     maxCloud: DEFAULT_MAX_CLOUD,
-    cloudMethod: DEFAULT_CLOUD_METHOD,
-    clearThreshold: DEFAULT_CLEAR_THRESHOLD,
+    maskId: DEFAULT_MASK_ID,
+    maskOptions: { ...DEFAULT_MASK_OPTIONS },
 
     context: { boundary: null, smz: null, plots: null },
 
@@ -121,16 +111,14 @@ export function createState(): State {
 }
 
 /**
- * Whether the project still needs the operator's attention.
+ * Whether the tool has everything it needs to run.
  *
- * This deliberately turns on explicit confirmation rather than on the value
- * differing from the placeholder. The prefilled example is a real project id,
- * so comparing strings would permanently block the person whose project it
- * actually is. Editing the field or pressing the confirm button sets
- * projectConfirmed, and so does supplying ?ee_project_id in the URL.
+ * The Earth Engine build could not run until the operator supplied a Cloud
+ * project id and signed in. Neither exists now: the catalogue and the imagery
+ * are both open, so an area of interest is the only prerequisite.
  */
-export function isPlaceholderProject(state: State): boolean {
-  return !state.projectConfirmed || state.projectId.trim() === "";
+export function isReadyToRun(state: State): boolean {
+  return state.aoi !== null && state.periods.length > 0;
 }
 
 export function breaksDeviate(state: State, id: DeltaId): boolean {
@@ -143,16 +131,21 @@ export function breaksDeviate(state: State, id: DeltaId): boolean {
   );
 }
 
-/** Only parameters are persisted. Tile URLs die with the access token. */
+/**
+ * Only parameters are persisted.
+ *
+ * Results are not, because a run now paints megabytes of PNG data URLs and
+ * embedding those in a saved project would make the file unusable. Re-running
+ * costs seconds and needs no credentials, so there is nothing to preserve.
+ */
 export interface PersistedState {
   version: 1;
-  projectId: string;
   aoi: Aoi | null;
   aoiLabel: string;
   periods: Period[];
   maxCloud: number;
-  cloudMethod: CloudMethod;
-  clearThreshold: number;
+  maskId: string;
+  maskOptions: MaskOptions;
   breaks: Record<DeltaId, Breaks>;
   justifications: Record<DeltaId, string>;
   context: Record<ContextRole, ContextLayer | null>;
@@ -184,13 +177,12 @@ function persistContext(layer: ContextLayer | null): ContextLayer | null {
 export function toPersisted(state: State): PersistedState {
   return {
     version: 1,
-    projectId: state.projectId,
     aoi: state.aoi,
     aoiLabel: state.aoiLabel,
     periods: state.periods,
     maxCloud: state.maxCloud,
-    cloudMethod: state.cloudMethod,
-    clearThreshold: state.clearThreshold,
+    maskId: state.maskId,
+    maskOptions: state.maskOptions,
     breaks: state.breaks,
     justifications: state.justifications,
     context: {
@@ -208,10 +200,6 @@ export function fromPersisted(state: State, raw: unknown): State {
 
   return {
     ...state,
-    projectId: persisted.projectId ?? state.projectId,
-    // A restored project still requires the operator to confirm the Cloud
-    // project, because billing follows whoever is signed in now.
-    projectConfirmed: false,
     aoi: persisted.aoi ?? null,
     aoiLabel: persisted.aoiLabel ?? "",
     periods:
@@ -220,11 +208,8 @@ export function fromPersisted(state: State, raw: unknown): State {
         : state.periods,
     maxCloud:
       typeof persisted.maxCloud === "number" ? persisted.maxCloud : state.maxCloud,
-    cloudMethod: persisted.cloudMethod ?? state.cloudMethod,
-    clearThreshold:
-      typeof persisted.clearThreshold === "number"
-        ? persisted.clearThreshold
-        : state.clearThreshold,
+    maskId: persisted.maskId ?? state.maskId,
+    maskOptions: { ...state.maskOptions, ...(persisted.maskOptions ?? {}) },
     breaks: persisted.breaks ?? state.breaks,
     justifications: persisted.justifications ?? state.justifications,
     context: {

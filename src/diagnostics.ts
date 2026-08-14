@@ -1,5 +1,6 @@
 import { Breaks, DeltaId, MIN_STABLE_SCENE_COUNT } from "./defaults";
-import { HistogramBin, Period } from "./ee/analysis";
+import { HistogramBin } from "./analysis/deltas";
+import { Period } from "./analysis/run";
 
 export type HistogramShape =
   | "unimodal-narrow"

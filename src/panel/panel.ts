@@ -1,10 +1,4 @@
-import {
-  CLASS_LABELS,
-  CLASS_PALETTE,
-  DELTAS,
-  DeltaId,
-  PLACEHOLDER_EE_PROJECT,
-} from "../defaults";
+import { CLASS_LABELS, CLASS_PALETTE, DELTAS, DeltaId } from "../defaults";
 import {
   Diagnostic,
   analyseHistogram,
@@ -16,22 +10,10 @@ import {
   Aoi,
   Period,
   PeriodResult,
-  buildGeometry,
-  centroidLonLat,
-  computeAoiAreaHa,
   runPeriod,
-  utmCrsForLonLat,
-} from "../ee/analysis";
-import {
-  connect,
-  describeError,
-  isSessionExpired,
-  preloadEarthEngine,
-  rejectedClientIdValue,
-  rememberProjectId,
-  resolveOauthClientId,
-  sessionRemainingMs,
-} from "../ee/api";
+} from "../analysis/run";
+import { describeError } from "../errors";
+import { CLOUD_MASKS } from "../raster/mask";
 import { buildManifest } from "../manifest";
 import { MapLayerManager } from "../map/layers";
 import {
@@ -45,7 +27,7 @@ import {
   State,
   breaksDeviate,
   defaultBreaks,
-  isPlaceholderProject,
+  isReadyToRun,
 } from "../state";
 import { GeoLibreAppAPI } from "../types/geolibre";
 import { button, clear, el, field, formatDuration, formatHectares, input } from "./dom";
@@ -128,10 +110,6 @@ export class DisturbancePanel {
   mount(container: HTMLElement): void {
     this.container = container;
     container.classList.add("dc-root");
-    // Resolve the Earth Engine client now, so that when Run is pressed the
-    // sign-in popup opens inside the click's gesture window instead of after a
-    // 1.7 MB import. Safari suppresses popups that arrive late.
-    preloadEarthEngine();
     this.rerender();
     this.startClock();
   }
@@ -145,12 +123,12 @@ export class DisturbancePanel {
 
   private startClock(): void {
     this.stopClock();
+    // Results used to go stale when the Earth Engine access token expired,
+    // because the map tiles died with it. Nothing expires now: the layers are
+    // images this tab painted. The clock survives only to keep the elapsed
+    // time on screen honest.
     this.clockTimer = window.setInterval(() => {
       if (this.state.status !== "complete") return;
-      if (isSessionExpired(Date.now())) {
-        this.patch({ status: "stale" });
-        return;
-      }
       this.rerender();
     }, 30_000);
   }
@@ -168,8 +146,8 @@ export class DisturbancePanel {
 
     this.container.appendChild(this.renderIntro());
     this.container.appendChild(
-      this.section("project", "1", "Earth Engine", this.summariseProject(), () =>
-        this.renderProject(),
+      this.section("project", "1", "Imagery", this.summariseSource(), () =>
+        this.renderSource(),
       ),
     );
     this.container.appendChild(
@@ -283,14 +261,13 @@ export class DisturbancePanel {
     return wrapper;
   }
 
-  private summariseProject(): string {
-    if (isPlaceholderProject(this.state)) return "not set";
-    return this.state.projectId;
+  private summariseSource(): string {
+    const mask = CLOUD_MASKS[this.state.maskId];
+    return mask ? `Sentinel-2 L2A, ${mask.label}` : "Sentinel-2 L2A";
   }
 
   private summariseAoi(): string {
     if (!this.state.aoi) return "not set";
-    if (this.state.aoi.kind === "asset") return this.state.aoi.assetId;
     return this.state.aoiLabel || "set";
   }
 
@@ -599,93 +576,74 @@ export class DisturbancePanel {
 
   // Section 1 ---------------------------------------------------------------
 
-  private renderProject(): HTMLElement {
+  private renderSource(): HTMLElement {
     const body = el("div", "dc-stack");
 
-    const projectInput = input("text", this.state.projectId, (value) => {
+    body.appendChild(
+      this.notice(
+        "info",
+        "No account needed",
+        "Imagery comes from the Copernicus Sentinel-2 L2A archive published as cloud-optimised GeoTIFFs on AWS Open Data, found through Element 84's public Earth Search catalogue. Both answer anonymous requests, so there is nothing to sign in to and nothing to be granted access to. Every pixel is read and reduced in this browser tab.",
+      ),
+    );
+
+    const mask = CLOUD_MASKS[this.state.maskId];
+    if (mask) {
+      body.appendChild(
+        field(
+          "Cloud masking",
+          el("div", "dc-static", mask.label),
+          mask.description,
+        ),
+      );
+    }
+
+    const castShadow = input(
+      "checkbox",
+      String(this.state.maskOptions.rejectCastShadow),
+      () => {},
+    );
+    castShadow.checked = this.state.maskOptions.rejectCastShadow;
+    castShadow.addEventListener("change", () => {
       this.patch({
-        projectId: value.trim(),
-        projectConfirmed:
-          value.trim() !== "" && value.trim() !== PLACEHOLDER_EE_PROJECT,
+        maskOptions: {
+          ...this.state.maskOptions,
+          rejectCastShadow: castShadow.checked,
+        },
+        status: this.state.status === "complete" ? "stale" : this.state.status,
       });
-      if (value.trim() && value.trim() !== PLACEHOLDER_EE_PROJECT) {
-        rememberProjectId(value.trim());
-      }
     });
-    projectInput.spellcheck = false;
     body.appendChild(
       field(
-        "Cloud project ID",
-        projectInput,
-        "Earth Engine refuses every compute call without a billed Cloud project. Compute is metered against this project, not against your personal quota.",
+        "Reject cast shadow",
+        castShadow,
+        "Scene classification class 2 covers both cloud shadow the classifier declined to call class 3 and ordinary topographic shade. Rejecting it is right on flat ground. In steep terrain it can remove most north-facing slopes from every scene in the window, which costs more than the cloud it avoids.",
       ),
     );
 
-    if (isPlaceholderProject(this.state)) {
-      const confirm = el("div", "dc-notice dc-notice-warning");
-      confirm.appendChild(el("div", "dc-notice-title", "Confirm the project"));
-      confirm.appendChild(
-        el(
-          "div",
-          "dc-notice-detail",
-          `"${PLACEHOLDER_EE_PROJECT}" is prefilled as an example. Edit it to your own Cloud project, or confirm it if that is already the one you use.`,
-        ),
-      );
-      confirm.appendChild(
-        button(
-          `Use ${this.state.projectId || PLACEHOLDER_EE_PROJECT}`,
-          () => {
-            const id = (this.state.projectId || PLACEHOLDER_EE_PROJECT).trim();
-            rememberProjectId(id);
-            this.patch({ projectId: id, projectConfirmed: true });
-          },
-          "primary",
-        ),
-      );
-      body.appendChild(confirm);
-    }
-
-    const status = el("div", "dc-status-line");
-    status.appendChild(
-      el(
-        "span",
-        `dc-dot ${this.state.signedIn ? "dc-dot-on" : "dc-dot-off"}`,
-        "",
+    const snow = input("checkbox", String(this.state.maskOptions.rejectSnow), () => {});
+    snow.checked = this.state.maskOptions.rejectSnow;
+    snow.addEventListener("change", () => {
+      this.patch({
+        maskOptions: { ...this.state.maskOptions, rejectSnow: snow.checked },
+        status: this.state.status === "complete" ? "stale" : this.state.status,
+      });
+    });
+    body.appendChild(
+      field(
+        "Reject snow and ice",
+        snow,
+        "Class 11. Relevant only where a window reaches into the shoulder season.",
       ),
     );
-    status.appendChild(
-      el(
-        "span",
-        "dc-status-text",
-        this.state.signedIn
-          ? "Signed in to Earth Engine"
-          : "Not signed in. Sign-in happens on the first run.",
+
+    body.appendChild(
+      this.notice(
+        "warning",
+        "Weaker than Cloud Score+",
+        "The Earth Engine build ranked every pixel on Cloud Score+, a continuous clarity score, and kept the single clearest observation. No equivalent score is published in a form a browser can read, so this build masks on the categorical scene classification and takes a median instead. Thin cloud edges survive masking more often, and the composite needs enough clear looks to be stable. Read the overpass counts and the coverage warnings before accepting a result.",
       ),
     );
-    body.appendChild(status);
-
-    const clientId = resolveOauthClientId();
-    const rejected = rejectedClientIdValue();
-
-    if (rejected) {
-      body.appendChild(
-        this.notice(
-          "warning",
-          "Ignoring an invalid client ID",
-          `"${rejected}" is not a Google OAuth client ID, so the built-in one is being used instead. Remove gee_client_id from the address bar to clear this. Real client IDs end in .apps.googleusercontent.com.`,
-        ),
-      );
-    }
-
-    if (!clientId) {
-      body.appendChild(
-        this.notice(
-          "warning",
-          "No OAuth client ID configured",
-          "This build has no VITE_GEE_OAUTH_CLIENT_ID. Sign-in will fail until one is set at build time, or supplied with ?gee_client_id= in the URL.",
-        ),
-      );
-    }
 
     return body;
   }
@@ -699,7 +657,6 @@ export class DisturbancePanel {
     const kindRow = el("div", "dc-row");
     const kinds: Array<[Aoi["kind"], string]> = [
       ["rectangle", "Bounds"],
-      ["asset", "EE asset"],
       ["geojson", "GeoJSON"],
     ];
     for (const [kind, label] of kinds) {
@@ -764,21 +721,6 @@ export class DisturbancePanel {
       );
     }
 
-    if (aoi?.kind === "asset") {
-      body.appendChild(
-        field(
-          "Asset ID",
-          input("text", aoi.assetId, (value) =>
-            this.patch({
-              aoi: { kind: "asset", assetId: value.trim() },
-              aoiLabel: value.trim(),
-            }),
-          ),
-          "A FeatureCollection asset, for example projects/your-project/assets/project_boundary. Its geometry() is used as the ROI.",
-        ),
-      );
-    }
-
     if (aoi?.kind === "geojson") {
       const area = el("textarea", "dc-textarea");
       area.rows = 5;
@@ -817,8 +759,6 @@ export class DisturbancePanel {
         aoi: { kind: "rectangle", west: 0, south: 0, east: 0, north: 0 },
         aoiLabel: "",
       });
-    } else if (kind === "asset") {
-      this.patch({ aoi: { kind: "asset", assetId: "" }, aoiLabel: "" });
     } else {
       this.patch({ aoi: { kind: "geojson", geometry: null }, aoiLabel: "" });
     }
@@ -917,48 +857,13 @@ export class DisturbancePanel {
       );
     }
 
-    const methodSelect = el("select", "dc-input");
-    for (const [value, label] of [
-      ["cloud-score-plus", "Cloud Score+ (production)"],
-      ["qa60-median", "QA60 + median (legacy)"],
-    ] as const) {
-      const option = el("option", "", label);
-      option.value = value;
-      if (this.state.cloudMethod === value) option.selected = true;
-      methodSelect.appendChild(option);
-    }
-    methodSelect.addEventListener("change", () =>
-      this.patch({ cloudMethod: methodSelect.value as State["cloudMethod"] }),
-    );
     body.appendChild(
-      field(
-        "Cloud removal",
-        methodSelect,
-        this.state.cloudMethod === "cloud-score-plus"
-          ? "Masks each pixel on the Cloud Score+ quality band, then keeps the single clearest observation per pixel. No median, so thin collections do not destabilise, and no scene-level cloud filter is needed."
-          : "Masks the QA60 cloud and cirrus bits, discards scenes above the ceiling below, then takes a per-pixel median. The older method; use it only to reproduce a result produced before the switch.",
+      el(
+        "p",
+        "dc-hint",
+        "Cloud handling lives in section 1 now, because the choice is no longer between two reductions. Every observation that survives masking goes into a per-pixel median.",
       ),
     );
-
-    if (this.state.cloudMethod === "cloud-score-plus") {
-      const clear = input("number", String(this.state.clearThreshold), (value) => {
-        const parsed = Number.parseFloat(value);
-        if (Number.isFinite(parsed)) {
-          this.patch({ clearThreshold: Math.min(1, Math.max(0, parsed)) });
-        }
-      });
-      clear.step = "0.05";
-      clear.min = "0";
-      clear.max = "1";
-      body.appendChild(
-        field(
-          "Clear-pixel threshold",
-          clear,
-          "Minimum Cloud Score+ clarity for a pixel to be used. 0.40 is the production default; 0.50 to 0.65 is stricter and keeps fewer pixels.",
-        ),
-      );
-      return body;
-    }
 
     const cloud = el("input", "dc-range");
     cloud.type = "range";
@@ -984,7 +889,7 @@ export class DisturbancePanel {
       field(
         "Maximum scene cloud cover",
         cloudRow,
-        "Filters scenes by CLOUDY_PIXEL_PERCENTAGE before the QA60 mask runs. Drop to 20 in the Pacific Northwest and coastal Alaska; raise above 30 only if composites show striping or NoData wedges.",
+        "Discards scenes above this whole-scene cloud percentage before anything is downloaded. Masking is per pixel, so this is a speed control rather than a quality one: every scene kept is a set of range reads over the network. Raise it when a window is thin and the coverage warning fires, lower it when a run feels slow.",
       ),
     );
 
@@ -1029,9 +934,8 @@ export class DisturbancePanel {
 
   private renderRunBar(): HTMLElement {
     const bar = el("div", "dc-runbar");
-    const running =
-      this.state.status === "running" || this.state.status === "connecting";
-    const blocked = isPlaceholderProject(this.state) || !this.state.aoi;
+    const running = this.state.status === "running";
+    const blocked = !isReadyToRun(this.state);
 
     const label =
       this.state.status === "stale" ? "Re-run check" : "Run check";
@@ -1040,10 +944,9 @@ export class DisturbancePanel {
     bar.appendChild(runButton);
 
     if (blocked && !running) {
-      const reason = isPlaceholderProject(this.state)
-        ? "Set your Cloud project ID first."
-        : "Set an area of interest first.";
-      bar.appendChild(el("span", "dc-runbar-hint", reason));
+      bar.appendChild(
+        el("span", "dc-runbar-hint", "Set an area of interest first."),
+      );
     }
 
     if (running && this.state.progress) {
@@ -1064,7 +967,7 @@ export class DisturbancePanel {
 
     if (this.state.status === "idle") {
       body.appendChild(
-        el("p", "dc-hint", "No run yet. Set the project, area and period, then run the check."),
+        el("p", "dc-hint", "No run yet. Set the area and the period, then run the check."),
       );
       return body;
     }
@@ -1073,18 +976,18 @@ export class DisturbancePanel {
       body.appendChild(
         this.notice(
           "warning",
-          "Session expired",
-          "The Earth Engine access token has lapsed, so the map tiles from this run are no longer served. Every parameter is preserved. Re-run to regenerate the layers.",
+          "Settings changed since this run",
+          "A parameter has moved since these layers were drawn, so what is on the map no longer matches what is in the panel. The layers themselves do not expire. Re-run to bring them back into agreement.",
         ),
       );
     } else if (this.state.status === "complete" && this.state.runStartedAt) {
-      const remaining = sessionRemainingMs(Date.now());
+      const elapsed = Date.now() - this.state.runStartedAt;
       const clock = el("div", "dc-clock");
       clock.appendChild(
         el(
           "span",
           "dc-clock-text",
-          `Run at ${new Date(this.state.runStartedAt).toLocaleTimeString()} · tiles valid for ${formatDuration(remaining)}`,
+          `Run at ${new Date(this.state.runStartedAt).toLocaleTimeString()} · ${formatDuration(elapsed)} ago`,
         ),
       );
       body.appendChild(clock);
@@ -1123,7 +1026,7 @@ export class DisturbancePanel {
       el(
         "div",
         "dc-result-meta",
-        `${result.preSceneCount} pre scenes · ${result.postSceneCount} post scenes · ${formatHectares(result.aoiAreaHa)} ha AOI · areas on ${result.utmCrs}`,
+        `${result.preObservations.length} pre overpasses · ${result.postObservations.length} post overpasses · ${formatHectares(result.aoiAreaHa)} ha observed · EPSG:${result.grid.epsg} at ${result.grid.resolution} m`,
       ),
     );
 
@@ -1303,55 +1206,51 @@ export class DisturbancePanel {
   // Run ---------------------------------------------------------------------
 
   async run(): Promise<void> {
-    if (isPlaceholderProject(this.state) || !this.state.aoi) return;
+    if (!isReadyToRun(this.state) || !this.state.aoi) return;
 
     this.patch({
-      status: "connecting",
+      status: "running",
       error: null,
-      progress: "Signing in to Earth Engine",
+      progress: "Searching the catalogue",
       acknowledged: false,
     });
 
     try {
-      const ee = await connect(resolveOauthClientId(), this.state.projectId);
-      this.patch({ signedIn: true, status: "running", progress: "Resolving area of interest" });
-
-      const roi = buildGeometry(ee, this.state.aoi);
-      const centroid = await centroidLonLat(roi);
-      const utmCrs = utmCrsForLonLat(centroid.lon, centroid.lat);
-      const aoiAreaHa = await computeAoiAreaHa(ee, roi, utmCrs);
-
       const results: PeriodResult[] = [];
       const analyses: State["analyses"] = {};
       const diagnostics: Diagnostic[] = [];
 
       for (const period of this.state.periods) {
         diagnostics.push(...checkPeriod(period));
-        const result = await runPeriod(
-          ee,
-          roi,
-          period,
-          {
-            aoi: this.state.aoi,
-            periods: this.state.periods,
-            maxCloud: this.state.maxCloud,
-            cloudMethod: this.state.cloudMethod,
-            clearThreshold: this.state.clearThreshold,
-            breaks: this.state.breaks,
-          },
-          utmCrs,
-          aoiAreaHa,
-          (progress) => this.patch({ progress }),
-        );
+        const result = await runPeriod(period, {
+          aoi: this.state.aoi,
+          periods: this.state.periods,
+          maxCloud: this.state.maxCloud,
+          maskId: this.state.maskId,
+          maskOptions: this.state.maskOptions,
+          breaks: this.state.breaks,
+          onProgress: (progress: string) => this.patch({ progress }),
+        });
         results.push(result);
 
         diagnostics.push(
           ...checkSceneCounts(
             period.id,
-            result.preSceneCount,
-            result.postSceneCount,
+            result.preObservations.length,
+            result.postObservations.length,
           ),
         );
+        // Warnings raised inside the run are findings about the data, not
+        // about the parameters, so they join the diagnostics rather than
+        // sitting in a separate list the operator has to remember to read.
+        for (const warning of result.warnings) {
+          diagnostics.push({
+            severity: "warning",
+            title: `${period.id} coverage`,
+            detail: warning,
+            source: "Run",
+          });
+        }
 
         const periodAnalyses = {} as Record<DeltaId, ReturnType<typeof analyseHistogram>>;
         for (const id of Object.keys(DELTAS) as DeltaId[]) {
@@ -1397,53 +1296,42 @@ export class DisturbancePanel {
   }
 
   /**
-   * SOP Step 7 layer order. Layers are added bottom-up so that the classified
-   * rasters finish on top, with the continuous deltas, single-date composites
-   * and RGB pairs beneath them, hidden but available for the cross-check that
-   * Appendix A.2 and A.3 depend on.
+   * SOP Step 7 layer order.
+   *
+   * Layers are added bottom-up so the classified rasters finish on top, with
+   * the continuous deltas, single-date indices and RGB pairs beneath them,
+   * hidden but available for the cross-check Appendix A.2 and A.3 depend on.
+   * The run emits them tagged by role; the order is imposed here so that
+   * changing what a run produces cannot quietly reshuffle the map.
    */
   private syncLayers(results: PeriodResult[]): string[] {
-    // Clear only the raster products of the previous run. Uploaded site data is
-    // left alone, because it did not come from Earth Engine and does not expire.
+    // Clear only the raster products of the previous run. Uploaded site data
+    // is left alone, because it did not come from a run and does not expire.
     this.layers.removeByPrefix("tuvsud-dc-r-");
 
     const created: string[] = [];
-    const add = (suffix: string, name: string, url: string, visible: boolean) => {
-      this.layers.addRaster({ key: `r-${suffix}`, name, tileUrl: url, visible });
-      created.push(`tuvsud-dc-r-${suffix}`);
-    };
+    const order: Array<PeriodResult["layers"][number]["role"]> = [
+      "rgb",
+      "index",
+      "continuous",
+      "classified",
+    ];
 
     for (const result of results) {
       const prefix = results.length > 1 ? `${result.periodId} ` : "";
-      const slug = result.periodId.replace(/[^a-z0-9]/gi, "").toLowerCase();
-
-      add(`${slug}-pre-rgb`, `${prefix}Pre RGB`, result.preRgbTileUrl, false);
-      add(`${slug}-post-rgb`, `${prefix}Post RGB`, result.postRgbTileUrl, false);
-
-      // Single-date index layers, as the production scripts render them.
-      add(`${slug}-pre-ndvi`, `${prefix}Pre NDVI`, result.indexTileUrls.preNdvi, false);
-      add(`${slug}-post-ndvi`, `${prefix}Post NDVI`, result.indexTileUrls.postNdvi, false);
-      add(`${slug}-pre-ndmi`, `${prefix}Pre NDMI`, result.indexTileUrls.preNdmi, false);
-      add(`${slug}-post-ndmi`, `${prefix}Post NDMI`, result.indexTileUrls.postNdmi, false);
-
-      for (const id of ["dNDVI", "dNDMI", "dNBR"] as DeltaId[]) {
-        add(
-          `${slug}-${id.toLowerCase()}-cont`,
-          `${prefix}${id} continuous`,
-          result.deltas[id].tileUrlContinuous,
-          false,
-        );
-      }
-      // Classified rasters go on last so they finish on top, and visible, with
-      // undisturbed pixels already masked out server-side so the composite and
-      // basemap show through.
-      for (const id of ["dNDVI", "dNDMI", "dNBR"] as DeltaId[]) {
-        add(
-          `${slug}-${id.toLowerCase()}-class`,
-          `${prefix}${id} classified`,
-          result.deltas[id].tileUrlClassified,
-          true,
-        );
+      for (const role of order) {
+        for (const layer of result.layers) {
+          if (layer.role !== role) continue;
+          const suffix = layer.key.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+          this.layers.addRaster({
+            key: `r-${suffix}`,
+            name: `${prefix}${layer.name}`,
+            dataUrl: layer.dataUrl,
+            coordinates: layer.coordinates,
+            visible: layer.visible,
+          });
+          created.push(`tuvsud-dc-r-${suffix}`);
+        }
       }
     }
 
