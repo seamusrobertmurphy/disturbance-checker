@@ -143,11 +143,25 @@ produced by [`scripts/export-cloud-model.py`](../scripts/export-cloud-model.py),
 which refuses to keep an export whose logits differ from the torch model it came
 from by more than 1e-3 or whose classes differ at all.
 
-**What it costs.** 57 MB of weights and 26 MB of runtime, fetched once on the
-first run that selects it and then cached by the browser, and roughly half a
-second per overpass per block on a CPU. A project-sized area is a block or two;
-a rectangle of several thousand square kilometres is not, and there the scene
-classification is the practical choice.
+**What it costs.** 57 MB of weights and 24 MB of runtime, fetched once on the
+first run that selects it and then cached by the browser, plus inference. On one
+512 by 512 block through both models, warm, measured in Chrome 151 against the
+deployed build:
+
+| Provider | Per block, per overpass |
+|---|---|
+| WebGPU | 0.26 s |
+| WebAssembly | 6.3 s |
+
+Which one you get is recorded in the run manifest. The gap is why the session is
+created asking for WebGPU alone and only then falling back, rather than handing
+the runtime a list and trusting it to prefer the fast one: a list containing
+both was measured running at WebAssembly speed on a machine where WebGPU worked
+when asked for by itself.
+
+A project-sized area is a block or two. A rectangle of several thousand square
+kilometres is a hundred and more, and there the scene classification is the
+practical choice whatever the browser.
 
 ## 5. Compositing
 

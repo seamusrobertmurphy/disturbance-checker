@@ -168,10 +168,8 @@ async function loadRuntime(
   // avoids a worker that fails and a fallback that looks like a bug.
   ort.env.wasm.numThreads = 1;
 
-  const webgpu = "gpu" in navigator;
-  const providers = webgpu ? ["webgpu", "wasm"] : ["wasm"];
-
   const sessions: OrtSession[] = [];
+  let provider = "wasm";
   for (let i = 0; i < MODELS.length; i += 1) {
     const name = MODELS[i];
     const bytes = await fetchWithProgress(
@@ -184,12 +182,50 @@ async function loadRuntime(
       signal,
     );
     report(`starting the cloud model (${i + 1} of ${MODELS.length})`);
-    sessions.push(
-      await ort.InferenceSession.create(bytes, { executionProviders: providers }),
-    );
+    const started = await startSession(ort, bytes);
+    sessions.push(started.session);
+    provider = started.provider;
   }
 
-  return { ort, sessions, provider: webgpu ? "webgpu" : "wasm" };
+  return { ort, sessions, provider };
+}
+
+/**
+ * Ask for one provider at a time, WebGPU first.
+ *
+ * Passing `["webgpu", "wasm"]` and letting the runtime choose looks tidier and
+ * is a trap: measured in Chrome 151 on the deployed build, a list containing
+ * both ran at WebAssembly speed even where WebGPU worked when it was asked for
+ * alone. The difference is not marginal. On one 512 block through both models,
+ * warm, WebGPU took 263 ms and WebAssembly 6,301 ms, so a fallback taken
+ * silently is the difference between a run of minutes and a run of hours.
+ *
+ * Falling back is still right where WebGPU genuinely is not there. It is
+ * reported rather than hidden, and the run manifest records which one ran.
+ */
+async function startSession(
+  ort: OrtModule,
+  bytes: Uint8Array,
+): Promise<{ session: OrtSession; provider: string }> {
+  if ("gpu" in navigator) {
+    try {
+      return {
+        session: await ort.InferenceSession.create(bytes, {
+          executionProviders: ["webgpu"],
+        }),
+        provider: "webgpu",
+      };
+    } catch {
+      // An adapter that exists but will not give a device, which happens on
+      // software rasterisers and locked-down machines. WebAssembly still runs.
+    }
+  }
+  return {
+    session: await ort.InferenceSession.create(bytes, {
+      executionProviders: ["wasm"],
+    }),
+    provider: "wasm",
+  };
 }
 
 function roundUp(value: number): number {
