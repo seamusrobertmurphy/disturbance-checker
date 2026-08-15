@@ -722,7 +722,7 @@ export class DisturbancePanel {
         ? this.notice(
             "warning",
             "A better mask is available",
-            "The scene classification is a per-pixel category, and what it lets through is thin cloud edges and cloud shadow, both of which read as canopy loss in a delta. On a 61 percent cloudy overpass of a Montana project it called 11.4 percent of a block clear where the segmentation model called it cloud or shadow, against 0.75 percent the other way. Switch the mask above where the result matters; it costs a 57 MB download once and roughly half a second per overpass per block.",
+            "The scene classification is a per-pixel category, and what it lets through is thin cloud edges and cloud shadow, both of which read as canopy loss in a delta. On a 61 percent cloudy overpass of a Montana project it called 11.4 percent of a block clear where the segmentation model called it cloud or shadow, against 0.75 percent the other way. Switch the mask above where the result matters. It costs a 57 MB download once, and per overpass per block 0.26 seconds in a browser with WebGPU or 6.3 seconds without it.",
           )
         : this.notice(
             "info",
