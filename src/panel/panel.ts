@@ -60,10 +60,11 @@ import {
   State,
   breaksDeviate,
   defaultBreaks,
+  isDelivery,
   isReadyToRun,
 } from "../state";
 import { GeoLibreAppAPI } from "../types/geolibre";
-import { button, clear, el, field, formatDuration, formatHectares, input } from "./dom";
+import { button, clear, el, field, formatDuration, formatHectares, input, select } from "./dom";
 import { renderHistogramPlot } from "./histogram-plot";
 
 const OPEN_SECTIONS_KEY = "tuvsud.disturbance.openSections";
@@ -239,7 +240,13 @@ export class DisturbancePanel {
       ),
     );
     this.container.appendChild(
-      this.section("findings", "9", "Findings", "", () => this.renderFindings()),
+      this.section(
+        "findings",
+        "9",
+        "Delivery and record",
+        this.summariseDelivery(),
+        () => this.renderFindings(),
+      ),
     );
     this.container.appendChild(this.renderHelpFooter());
   }
@@ -646,34 +653,53 @@ export class DisturbancePanel {
       body.appendChild(
         field(
           "Cloud masking",
-          el("div", "dc-static", mask.label),
+          select(
+            Object.values(CLOUD_MASKS).map((option) => ({
+              value: option.id,
+              label: option.label,
+            })),
+            mask.id,
+            (value) => {
+              this.patch({
+                maskId: value,
+                status:
+                  this.state.status === "complete" ? "stale" : this.state.status,
+              });
+            },
+          ),
           mask.description,
         ),
       );
     }
 
-    const castShadow = input(
-      "checkbox",
-      String(this.state.maskOptions.rejectCastShadow),
-      () => {},
-    );
-    castShadow.checked = this.state.maskOptions.rejectCastShadow;
-    castShadow.addEventListener("change", () => {
-      this.patch({
-        maskOptions: {
-          ...this.state.maskOptions,
-          rejectCastShadow: castShadow.checked,
-        },
-        status: this.state.status === "complete" ? "stale" : this.state.status,
+    // Cast shadow is a scene-classification setting, so it is shown only when
+    // that is what is running. The model has no such class: it was trained to
+    // tell a cloud's shadow from a hillside in shade, which is the question
+    // this switch exists to work around.
+    if (this.state.maskId === "scl") {
+      const castShadow = input(
+        "checkbox",
+        String(this.state.maskOptions.rejectCastShadow),
+        () => {},
+      );
+      castShadow.checked = this.state.maskOptions.rejectCastShadow;
+      castShadow.addEventListener("change", () => {
+        this.patch({
+          maskOptions: {
+            ...this.state.maskOptions,
+            rejectCastShadow: castShadow.checked,
+          },
+          status: this.state.status === "complete" ? "stale" : this.state.status,
+        });
       });
-    });
-    body.appendChild(
-      field(
-        "Reject cast shadow",
-        castShadow,
-        "Scene classification class 2 covers both cloud shadow the classifier declined to call class 3 and ordinary topographic shade. Rejecting it is right on flat ground. In steep terrain it can remove most north-facing slopes from every scene in the window, which costs more than the cloud it avoids.",
-      ),
-    );
+      body.appendChild(
+        field(
+          "Reject cast shadow",
+          castShadow,
+          "Scene classification class 2 covers both cloud shadow the classifier declined to call class 3 and ordinary topographic shade. Rejecting it is right on flat ground. In steep terrain it can remove most north-facing slopes from every scene in the window, which costs more than the cloud it avoids.",
+        ),
+      );
+    }
 
     const snow = input("checkbox", String(this.state.maskOptions.rejectSnow), () => {});
     snow.checked = this.state.maskOptions.rejectSnow;
@@ -692,11 +718,17 @@ export class DisturbancePanel {
     );
 
     body.appendChild(
-      this.notice(
-        "warning",
-        "Weaker than Cloud Score+",
-        "The Earth Engine build ranked every pixel on Cloud Score+, a continuous clarity score, and kept the single clearest observation. No equivalent score is published in a form a browser can read, so this build masks on the categorical scene classification and takes a median instead. Thin cloud edges survive masking more often, and the composite needs enough clear looks to be stable. Read the overpass counts and the coverage warnings before accepting a result.",
-      ),
+      this.state.maskId === "scl"
+        ? this.notice(
+            "warning",
+            "A better mask is available",
+            "The scene classification is a per-pixel category, and what it lets through is thin cloud edges and cloud shadow, both of which read as canopy loss in a delta. On a 61 percent cloudy overpass of a Montana project it called 11.4 percent of a block clear where the segmentation model called it cloud or shadow, against 0.75 percent the other way. Switch the mask above where the result matters; it costs a 57 MB download once and roughly half a second per overpass per block.",
+          )
+        : this.notice(
+            "info",
+            "Model runs in this tab",
+            "The weights download once, then stay in the browser cache. Inference is slower than a class lookup, so expect a longer run over a large area, and prefer a browser with WebGPU. Snow, saturated and no-data pixels still come from the scene classification, which is authoritative about all three.",
+          ),
     );
 
     return body;
@@ -1909,8 +1941,87 @@ export class DisturbancePanel {
     });
   }
 
+  /**
+   * Who the result is for.
+   *
+   * Three optional fields, and leaving them empty is a legitimate answer: a
+   * screening run someone did for themselves is not a delivery and should not
+   * be dressed as one. Filling them in puts the names in the record, which is
+   * what lets a hectare figure be quoted against a registry figure and a moved
+   * threshold be attributed to whoever moved it.
+   */
+  private summariseDelivery(): string {
+    if (!isDelivery(this.state.delivery)) {
+      return this.state.results.length > 0 ? "internal run, unattributed" : "";
+    }
+    const undocumented = (Object.keys(DELTAS) as DeltaId[]).filter(
+      (id) => breaksDeviate(this.state, id) && !this.state.justifications[id]?.trim(),
+    );
+    const who = this.state.delivery.project.trim() || this.state.delivery.client.trim();
+    return undocumented.length > 0 ? `${who}, not SOP-compliant` : who;
+  }
+
+  private renderDelivery(): HTMLElement {
+    const body = el("div", "dc-stack");
+
+    const line = (
+      label: string,
+      key: "project" | "client" | "analyst",
+      placeholder: string,
+      hint: string,
+    ) => {
+      const control = input("text", this.state.delivery[key], () => {});
+      control.placeholder = placeholder;
+      control.addEventListener("change", () => {
+        this.patch({
+          delivery: { ...this.state.delivery, [key]: control.value },
+        });
+      });
+      body.appendChild(field(label, control, hint));
+    };
+
+    line(
+      "Project",
+      "project",
+      "ILTF/NICC & Blackfeet Indian Nation Forest Carbon Project (ACR782), RP3",
+      "Name and registry id as the monitoring report gives them, so the figures below can be quoted against the registry's own.",
+    );
+    line(
+      "Prepared for",
+      "client",
+      "Indian Land Tenure Foundation (ILTF)",
+      "Who receives the result.",
+    );
+    line("Analyst", "analyst", "TUV SUD Green Energy & Sustainability", "Who ran it.");
+
+    return body;
+  }
+
+  /**
+   * The one statement a reader of a delivery is entitled to before the numbers.
+   *
+   * SOP Step 6 allows a threshold to be moved off its default only where the
+   * histogram supports it and the deviation is documented. A run that moved one
+   * and documented nothing is not SOP-compliant, and saying so here is cheaper
+   * than having it found later.
+   */
+  private renderCompliance(): HTMLElement | null {
+    const undocumented = (Object.keys(DELTAS) as DeltaId[]).filter(
+      (id) => breaksDeviate(this.state, id) && !this.state.justifications[id]?.trim(),
+    );
+    if (undocumented.length === 0) return null;
+
+    return this.notice(
+      "warning",
+      "Not readable as SOP-compliant",
+      `${undocumented.join(", ")} ${undocumented.length === 1 ? "uses a threshold" : "use thresholds"} moved off the SOP Step 6 default with no justification recorded. Write one sentence per layer from the histogram in section 4, or return the threshold to its default. Until then these figures cannot be presented as SOP-compliant.`,
+    );
+  }
+
   private renderFindings(): HTMLElement {
     const body = el("div", "dc-stack");
+
+    body.appendChild(this.renderDelivery());
 
     if (this.state.results.length === 0) {
       body.appendChild(
@@ -1918,6 +2029,9 @@ export class DisturbancePanel {
       );
       return body;
     }
+
+    const compliance = this.renderCompliance();
+    if (compliance) body.appendChild(compliance);
 
     const manifest = buildManifest(
       this.state,
@@ -1943,7 +2057,16 @@ export class DisturbancePanel {
         const url = URL.createObjectURL(blob);
         const link = el("a");
         link.href = url;
-        link.download = `disturbance-check-${new Date(this.state.runStartedAt ?? Date.now())
+        // Named for the project where there is one. A folder of files called
+        // disturbance-check-2026-08-14-...txt is a folder nobody can read.
+        const slug =
+          this.state.delivery.project
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "")
+            .slice(0, 60) || "disturbance-check";
+        link.download = `${slug}-${new Date(this.state.runStartedAt ?? Date.now())
           .toISOString()
           .slice(0, 19)
           .replace(/[:T]/g, "-")}.txt`;

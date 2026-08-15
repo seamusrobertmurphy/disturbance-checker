@@ -142,11 +142,24 @@ The short version: if the panel raises a warning, resolve it before you treat
 anything on screen as real. A warning usually means the imagery is
 misleading rather than the site being disturbed.
 
-## 8. Findings
+## 8. Delivery and record
 
-Section 7 holds the run manifest: every parameter, every threshold, whether any
-deviated from the SOP default and why, the class areas in hectares, and every
-diagnostic raised along with whether you acknowledged it.
+Name the project, who it is for, and who ran it. All three are optional and
+leaving them blank is a real answer: a screening run you did for yourself is not
+a delivery and should not be dressed as one. Filling them in puts the names into
+the record, which is what lets a hectare figure be quoted against the registry's
+own figure and a moved threshold be attributed to whoever moved it. The
+downloaded file is named for the project too.
+
+The section then holds the run manifest: every parameter, every threshold,
+whether any deviated from the SOP default and why, the class areas in hectares,
+and every diagnostic raised along with whether you acknowledged it.
+
+One thing it will refuse to be quiet about. SOP Step 6 allows a threshold to be
+moved off its default only where the histogram supports it and the deviation is
+documented. Move one and write no justification and the section says the figures
+cannot be read as SOP-compliant, and names the layers. Write a sentence per
+layer from its histogram, or put the threshold back.
 
 Copy it or download it, and keep it with the finding. It is the record of how
 the number in your CAR was produced, and it is what makes the check

@@ -65,6 +65,29 @@ jobs:
           cp plugin/dist/style.css "$target/dist/style.css"
           ls -la "$target" "$target/dist"
 
+      # The cloud model and the runtime that executes it.
+      #
+      # Kept out of the plugin bundle and fetched at runtime from this
+      # directory, because the plugin is built as one inlined ES module: a
+      # bundled runtime would land in every load of the app whether or not
+      # anyone selects that mask. Only a run that asks for it pays.
+      #
+      # The weights are committed, so what a tagged deploy runs cannot change
+      # under it. The wasm is not: it comes from the onnxruntime-web pinned in
+      # package-lock.json, so it never enters this repository's history.
+      - name: Ship the cloud model and its runtime
+        run: |
+          target="geolibre/apps/geolibre-desktop/public/plugins/${PLUGIN_ID}/vendor"
+          runtime="plugin/node_modules/onnxruntime-web/dist"
+          mkdir -p "$target"
+          cp plugin/vendor/ocm-v4-regnety.onnx "$target/"
+          cp plugin/vendor/ocm-v4-edgenext.onnx "$target/"
+          cp plugin/vendor/cloud-model.json "$target/"
+          cp "$runtime/ort.webgpu.min.mjs" "$target/"
+          cp "$runtime/ort-wasm-simd-threaded.jsep.mjs" "$target/"
+          cp "$runtime/ort-wasm-simd-threaded.jsep.wasm" "$target/"
+          du -h "$target"/* | sort -h
+
       - name: Build the GeoLibre web app
         working-directory: geolibre
         env:
@@ -83,6 +106,14 @@ jobs:
             exit 1
           fi
           echo "Plugin present: $(du -h "$out" | cut -f1)"
+          vendor="geolibre/apps/geolibre-desktop/dist/plugins/${PLUGIN_ID}/vendor"
+          for file in ocm-v4-regnety.onnx ocm-v4-edgenext.onnx ort.webgpu.min.mjs ort-wasm-simd-threaded.jsep.wasm; do
+            if [ ! -s "$vendor/$file" ]; then
+              echo "The cloud mask would 404 at runtime: $vendor/$file is missing or empty"
+              exit 1
+            fi
+          done
+          echo "Cloud model present: $(du -sh "$vendor" | cut -f1)"
 
       # Two things every colleague should get without touching a control.
       #

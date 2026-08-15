@@ -38,14 +38,42 @@ export interface ContextLayer {
   geojson: unknown;
 }
 
+/** The delivery's identity. Empty strings mean an internal screening run. */
+export interface Delivery {
+  /** Project name and registry id, as the monitoring report gives them. */
+  project: string;
+  /** Who the delivery is for. */
+  client: string;
+  /** Who ran it. */
+  analyst: string;
+}
+
+export const EMPTY_DELIVERY: Delivery = { project: "", client: "", analyst: "" };
+
+export function isDelivery(delivery: Delivery): boolean {
+  return Boolean(delivery.project.trim() || delivery.client.trim());
+}
+
 export interface State {
   aoi: Aoi | null;
   aoiLabel: string;
   periods: Period[];
   maxCloud: number;
-  /** Which cloud mask is in force. Only the SCL mask exists today. */
+  /** Which cloud mask is in force. */
   maskId: string;
   maskOptions: MaskOptions;
+
+  /**
+   * Who the result is for.
+   *
+   * A run without this is a screening one operator did for themselves; a run
+   * with it is a deliverable that will be read by someone who was not here.
+   * The difference is not cosmetic, which is why it is recorded rather than
+   * typed into an email afterwards: hectares quoted against a registry figure
+   * have to name the project they describe, and a threshold moved off its SOP
+   * default has to name who moved it.
+   */
+  delivery: Delivery;
 
   context: Record<ContextRole, ContextLayer | null>;
 
@@ -139,6 +167,7 @@ export function createState(): State {
     maxCloud: DEFAULT_MAX_CLOUD,
     maskId: DEFAULT_MASK_ID,
     maskOptions: { ...DEFAULT_MASK_OPTIONS },
+    delivery: { ...EMPTY_DELIVERY },
 
     context: { boundary: null, smz: null, plots: null },
 
@@ -209,6 +238,7 @@ export interface PersistedState {
   breaks: Record<DeltaId, Breaks>;
   justifications: Record<DeltaId, string>;
   context: Record<ContextRole, ContextLayer | null>;
+  delivery?: Delivery;
 }
 
 /**
@@ -245,6 +275,7 @@ export function toPersisted(state: State): PersistedState {
     maskOptions: state.maskOptions,
     breaks: state.breaks,
     justifications: state.justifications,
+    delivery: state.delivery,
     context: {
       boundary: persistContext(state.context.boundary),
       smz: persistContext(state.context.smz),
@@ -272,6 +303,7 @@ export function fromPersisted(state: State, raw: unknown): State {
     maskOptions: { ...state.maskOptions, ...(persisted.maskOptions ?? {}) },
     breaks: persisted.breaks ?? state.breaks,
     justifications: persisted.justifications ?? state.justifications,
+    delivery: { ...EMPTY_DELIVERY, ...(persisted.delivery ?? {}) },
     context: {
       boundary: persisted.context?.boundary ?? null,
       smz: persisted.context?.smz ?? null,

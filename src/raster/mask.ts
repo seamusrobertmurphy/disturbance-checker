@@ -1,26 +1,21 @@
 import type { AssetKey } from "../stac/search";
 import type { SceneBlock } from "./cog";
+import { omniMask } from "./omni";
 
 // Cloud, shadow and water masking.
 //
-// This is the weakest part of the browser rebuild and the part most worth
-// replacing, so it is an interface rather than a branch. Earth Engine offered
-// Cloud Score+, a continuous per-pixel clarity score produced by a model
-// Google runs over the whole archive. Nothing equivalent is published as a
-// cloud-optimised GeoTIFF. The only quality layer reachable anonymously from a
-// browser is SCL, the Sen2Cor scene classification, at 20 m.
+// Two masks, and the choice between them is a real one. SCL is the Sen2Cor
+// scene classification shipped in every L2A product: free, already being read,
+// and a categorical guess made pixel by pixel, so it misses thin cloud edges,
+// confuses bright bare ground with cloud, and over rugged terrain labels
+// topographic shade as cast shadow. OmniCloudMask is a segmentation model run
+// in the tab, which decides from shape and texture instead and separates cloud
+// shadow from terrain shade; it costs a download and inference time. See
+// omni.ts for what each was measured to do on the same cloudy overpass.
 //
-// SCL is a categorical guess, not a probability. It misses thin cloud edges,
-// it confuses bright bare ground with cloud, and over rugged terrain it labels
-// topographic shade as cast shadow. The composite is therefore built from a
-// median over surviving observations rather than a best-pixel pick, because a
-// best-pixel pick needs a quality score to rank on and there is none.
-//
-// The obvious upgrade is a segmentation model run in the tab. Models such as
-// OmniCloudMask need only red, green and NIR at 10 m, which are already being
-// fetched, and export to ONNX for onnxruntime-web. `evaluate` is async and
-// takes the whole scene block precisely so such a model can be dropped in
-// behind this interface without any caller changing.
+// Whichever is chosen, the composite is a median over surviving observations
+// rather than a best-pixel pick: a best-pixel pick needs a continuous quality
+// score to rank on, and neither of these produces one.
 
 /** Sen2Cor scene classification classes, as written into SCL.tif. */
 export enum SclClass {
@@ -74,6 +69,12 @@ export const DEFAULT_MASK_OPTIONS: MaskOptions = {
   rejectSnow: true,
 };
 
+/** The block's geometry, for a mask that reads shape rather than pixels. */
+export interface BlockShape {
+  width: number;
+  height: number;
+}
+
 export interface CloudMask {
   id: string;
   label: string;
@@ -82,10 +83,26 @@ export interface CloudMask {
   /** Assets the mask needs read for it, on top of the index bands. */
   requiredAssets: AssetKey[];
   /**
+   * Fetch and start whatever the mask needs, once, before a run begins.
+   *
+   * Separate from `evaluate` so that a mask with a large download reports it
+   * against the run's own progress line instead of stalling inside the first
+   * block. Returns how the mask should be described in the run manifest, which
+   * is not always its label: what a model actually ran on is decided here.
+   */
+  prepare?(
+    report: (message: string, fraction?: number) => void,
+    signal?: AbortSignal,
+  ): Promise<string>;
+  /**
    * Per-pixel keep flags for one scene over one block. 1 keeps the
    * observation, 0 discards it.
    */
-  evaluate(block: SceneBlock, options: MaskOptions): Promise<Uint8Array>;
+  evaluate(
+    block: SceneBlock,
+    options: MaskOptions,
+    shape: BlockShape,
+  ): Promise<Uint8Array>;
   /**
    * Per-pixel water flags, 1 where the pixel is water.
    *
@@ -149,8 +166,17 @@ export const sclMask: CloudMask = {
 
 export const CLOUD_MASKS: Record<string, CloudMask> = {
   [sclMask.id]: sclMask,
+  [omniMask.id]: omniMask,
 };
 
+/**
+ * SCL by default, not the better mask.
+ *
+ * The model is better and costs 57 MB and roughly half a second of inference
+ * per overpass per block. A first-time visitor opening the panel to try one
+ * small area should not silently spend either. The panel offers the swap and
+ * states what it costs; a run that wants it says so.
+ */
 export const DEFAULT_MASK_ID = sclMask.id;
 
 /**

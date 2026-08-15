@@ -161,6 +161,14 @@ export interface PeriodResult {
   observedPixels: number;
   /** Pixels whose thinner window fell below the SOP's stability floor. */
   thinPixels: number;
+  /**
+   * How the mask described itself once it had started.
+   *
+   * Not the same as its label. A model that fell back from WebGPU to wasm ran
+   * the same weights, but the run manifest should say which, because it is the
+   * difference between a run that took four minutes and one that took forty.
+   */
+  maskDescription: string;
   warnings: string[];
 }
 
@@ -226,6 +234,7 @@ async function compositeForBlock(
     mask,
     maskOptions,
     length: block.width * block.height,
+    shape: { width: block.width, height: block.height },
     rgbSubset,
   });
 }
@@ -315,6 +324,18 @@ export async function runPeriod(
   }
 
   const { mask, assets } = assetsFor(params.maskId);
+
+  // Whatever the mask needs fetched or started, before the first block rather
+  // than inside it, so a large download reports against this progress line
+  // instead of looking like a stalled read.
+  let maskDescription = mask.label;
+  if (mask.prepare) {
+    maskDescription = await mask.prepare(
+      (message, fraction) => report(`${period.id}: ${message}`, fraction),
+      signal,
+    );
+  }
+
   const blocks = blocksFor(grid, BLOCK_SIZE);
   const cache = new CogCache(signal);
   const warp = buildWarp(grid);
@@ -485,6 +506,7 @@ export async function runPeriod(
     aoiAreaHa: observedPixels * pixelHa,
     observedPixels,
     thinPixels,
+    maskDescription,
     warnings,
   };
 }
