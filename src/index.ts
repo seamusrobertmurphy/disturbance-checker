@@ -18,6 +18,49 @@ let panel: DisturbancePanel | null = null;
 let help: HelpLibrary | null = null;
 const teardown: Array<() => void> = [];
 
+/**
+ * Swallow one upstream rejection, and only that one.
+ *
+ * MapLibre queues image requests above `MAX_PARALLEL_IMAGE_REQUESTS`, which is
+ * sixteen. When a request settles it does `delete entry.abortController`, and
+ * the queue drainer then reads `entry.abortController.signal.aborted` off the
+ * entry it just cleared. Every queued basemap tile therefore rejects once with
+ * a TypeError, which is why the diagnostics panel opens on exactly sixteen
+ * errors over a raster basemap, in this plugin and in its sibling alike. The
+ * map itself is unaffected: the tiles draw.
+ *
+ * Verified present in the MapLibre bundled by GeoLibre v1.9.0 and still present
+ * in 5.24.0, which the current v2.6.0 ships, so upgrading the host does not
+ * clear it and nothing in this repository causes it.
+ *
+ * Matched narrowly on purpose: the exact message, and a stack that names
+ * maplibre. Anything else, including any other TypeError, is left to surface.
+ * This hides a known upstream defect, not our own failures.
+ */
+function silenceImageQueueRejection(): () => void {
+  const isQueueBug = (reason: unknown): boolean => {
+    if (!(reason instanceof TypeError)) return false;
+    const message = reason.message ?? "";
+    const stack = reason.stack ?? "";
+    return (
+      /signal/.test(message) &&
+      /undefined|null/.test(message) &&
+      /maplibre/i.test(stack)
+    );
+  };
+
+  const onRejection = (event: PromiseRejectionEvent) => {
+    if (isQueueBug(event.reason)) event.preventDefault();
+  };
+
+  // A host that offers no event target simply does not get this, rather than
+  // failing to activate over a cosmetic fix.
+  if (typeof window?.addEventListener !== "function") return () => {};
+
+  window.addEventListener("unhandledrejection", onRejection);
+  return () => window.removeEventListener("unhandledrejection", onRejection);
+}
+
 function createPanel(app: GeoLibreAppAPI): DisturbancePanel {
   return new DisturbancePanel(
     app,
@@ -67,13 +110,14 @@ function helpMenuItems(app: GeoLibreAppAPI): GeoLibreToolbarMenuItem[] {
 const plugin: GeoLibrePlugin = {
   id: PANEL_ID,
   name: "Disturbance Check",
-  version: "0.10.0",
+  version: "0.10.1",
   // Neither a Cloud project nor an OAuth client is a parameter any more.
   // Nothing this plugin reads requires an account, so the only thing left
   // worth linking to is a guide page.
   urlParameterNames: ["dc_guide"],
 
   activate(app) {
+    teardown.push(silenceImageQueueRejection());
     help = new HelpLibrary();
     panel = createPanel(app);
 
