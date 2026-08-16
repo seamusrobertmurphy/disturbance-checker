@@ -48,22 +48,6 @@ export function input(
   return node;
 }
 
-export function select(
-  options: Array<{ value: string; label: string }>,
-  value: string,
-  onChange: (value: string) => void,
-): HTMLSelectElement {
-  const node = el("select", "dc-input");
-  for (const option of options) {
-    const item = el("option", "", option.label);
-    item.value = option.value;
-    node.appendChild(item);
-  }
-  node.value = value;
-  node.addEventListener("change", () => onChange(node.value));
-  return node;
-}
-
 export function button(
   label: string,
   onClick: () => void,

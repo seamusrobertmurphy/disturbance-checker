@@ -85,15 +85,14 @@ than inferred from the date. Full reasoning in
 
 ## 4. Cloud masking
 
-Two masks. The choice is recorded in the run manifest, and it changes results.
+**This is the weakest part of the build and the most important thing to
+understand about it.**
 
-### Scene classification
-
-SCL, the Sen2Cor scene classification shipped in every L2A product, at 20 m.
-Rejected by default: no-data (0), saturated (1), cast shadow (2), cloud shadow
-(3), cloud medium probability (8), cloud high probability (9), thin cirrus (10)
-and snow (11). Vegetation (4), not-vegetated (5), water (6) and unclassified (7)
-survive.
+The only quality layer reachable anonymously from a browser is SCL, the Sen2Cor
+scene classification, at 20 m. Rejected by default: no-data (0), saturated (1),
+cast shadow (2), cloud shadow (3), cloud medium probability (8), cloud high
+probability (9), thin cirrus (10) and snow (11). Vegetation (4), not-vegetated
+(5), water (6) and unclassified (7) survive.
 
 Cast shadow and snow are switches, and the manifest records how they were set.
 Class 2 covers both cloud shadow the classifier declined to call class 3 and
@@ -101,76 +100,24 @@ ordinary topographic shade. Rejecting it is free on flat ground; in steep
 terrain it can remove most north-facing slopes from every scene in a window,
 which costs more than the cloud it avoids.
 
-SCL is a categorical guess made pixel by pixel. It misses thin cloud edges and
+SCL is a categorical guess, not a probability. It misses thin cloud edges and
 confuses bright bare ground with cloud.
 
-### Segmentation model
-
-[OmniCloudMask](https://github.com/DPIRD-DMA/OmniCloudMask) version 4, run in
-the browser tab on WebGPU where the browser has it and on WebAssembly where it
-does not. Two U-Nets, over `regnety_004` and `edgenext_small` encoders, take
-red, green and B8A and write four classes: clear, thick cloud, thin cloud and
-cloud shadow. Their logits are averaged before the class is taken, which is the
-published method; the two models disagreed on 7.9 percent of pixels in the
-measurement below, so one alone is a different mask.
-
-It decides from shape and texture rather than from per-pixel category, which is
-how a person tells a cloud from a bright field, and how it separates a cloud's
-shadow from a hillside in shade. Snow, saturated and no-data pixels still come
-from SCL, which is authoritative about all three and for which the model has no
-class.
-
-Measured against SCL on one 512 by 512 block at 20 m, cut from a 61.7 percent
-cloudy overpass of the Blackfeet ROI, scene `S2B_12UUV_20240827_0_L2A`:
-
-| | Share of block |
-|---|---|
-| SCL calls cloud or shadow | 64.62 percent |
-| The model calls cloud or shadow | 75.26 percent |
-| Model says cloud, SCL says clear | 11.39 percent |
-| SCL says cloud, model says clear | 0.75 percent |
-
-The asymmetry is the finding. What SCL lets through is thin edges and shadow,
-and in a pre-post delta both read as canopy loss.
-
-Both models are normalised the way the package normalises: per band and per
-patch, subtract the mean and divide by the standard deviation of the pixels that
-are not no-data. An additive offset therefore cancels exactly, so the +1000 DN
-baseline offset cannot move this mask whether or not it has been corrected.
-
-Code and weights are MIT. The ONNX files are committed under `vendor/` and are
-produced by [`scripts/export-cloud-model.py`](../scripts/export-cloud-model.py),
-which refuses to keep an export whose logits differ from the torch model it came
-from by more than 1e-3 or whose classes differ at all.
-
-**What it costs.** 57 MB of weights and 24 MB of runtime, fetched once on the
-first run that selects it and then cached by the browser, plus inference. On one
-512 by 512 block through both models, warm, measured in Chrome 151 against the
-deployed build:
-
-| Provider | Per block, per overpass |
-|---|---|
-| WebGPU | 0.26 s |
-| WebAssembly | 6.3 s |
-
-Which one you get is recorded in the run manifest. The gap is why the session is
-created asking for WebGPU alone and only then falling back, rather than handing
-the runtime a list and trusting it to prefer the fast one: a list containing
-both was measured running at WebAssembly speed on a machine where WebGPU worked
-when asked for by itself.
-
-A project-sized area is a block or two. A rectangle of several thousand square
-kilometres is a hundred and more, and there the scene classification is the
-practical choice whatever the browser.
+The interface in [`src/raster/mask.ts`](../src/raster/mask.ts) is asynchronous
+and receives the whole scene block, so a segmentation model exported to ONNX and
+run with `onnxruntime-web` can be added behind it without any caller changing.
+Models of that class need red, green and NIR at 10 m, which are already being
+fetched.
 
 ## 5. Compositing
 
 Per-pixel median over surviving observations.
 
-A best-pixel pick needs a continuous quality score to rank observations on.
-Neither mask here produces one: both write classes. So the reduction is a
-median, which is the SOP's own documented alternative and what the production
-scripts ran before they moved to a best-pixel pick.
+Earth Engine ran `qualityMosaic("cs")`, which ranks every observation on the
+Cloud Score+ clarity score and keeps the single clearest, never averaging. That
+needs a continuous score to rank on. SCL gives classes, so there is nothing to
+rank and the reduction falls back to a median, which is the SOP's own documented
+alternative and what the production scripts ran before the Cloud Score+ switch.
 
 Two details are load-bearing.
 
@@ -289,7 +236,7 @@ regardless of the order its rings were digitised in.
 | Credentials | Google account | Google account | None |
 | Collection | `S2_SR_HARMONIZED` | `S2_SR_HARMONIZED` | `sentinel-2-l2a` on AWS |
 | Landsat | not used | not used | not reachable anonymously |
-| Cloud removal | QA60 bitmask | Cloud Score+, `cs` ≥ 0.40 | SCL classes, or OmniCloudMask |
+| Cloud removal | QA60 bitmask | Cloud Score+, `cs` ≥ 0.40 | SCL classes |
 | Compositing | Median | `qualityMosaic("cs")` | Median |
 | Scene cloud filter | ≤ 30 | defined as 10, unused | 30, as a download filter |
 | Water mask | JRC GSW ≥ 50 | JRC GSW ≥ 50 | SCL class 6, majority |
@@ -300,11 +247,9 @@ regardless of the order its rings were digitised in.
 
 ## Known weaknesses
 
-1. **Neither mask produces a clarity score,** so the reduction is a median
-   rather than a best-pixel pick, and the overpass counts are worth reading. On
-   the scene classification specifically, thin cloud edges survive masking often
-   enough to matter; the segmentation model is the answer to that, at the cost
-   of a download and inference time.
+1. **SCL is coarser than Cloud Score+.** Thin cloud edges survive masking more
+   often, and the composite has no clarity score to rank on. This is the
+   headline difference and the reason to read the overpass counts.
 2. **The median needs four clear looks.** Below that the composite can move with
    a single observation. Advisory before, binding now.
 3. **Water is per-scene, not multi-decadal.** Seasonal water is treated

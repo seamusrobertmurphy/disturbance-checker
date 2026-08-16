@@ -6,7 +6,7 @@ import {
   HISTOGRAM_STEPS,
 } from "./defaults";
 import { formatHectares } from "./panel/dom";
-import { State, breaksDeviate, isDelivery } from "./state";
+import { State, breaksDeviate } from "./state";
 import { EARTH_SEARCH_URL, S2_STAC_COLLECTION } from "./stac/search";
 import { CLOUD_MASKS } from "./raster/mask";
 import { GRID_RESOLUTION } from "./raster/grid";
@@ -32,24 +32,6 @@ export function buildManifest(state: State, runAt: Date): string {
   lines.push("TUV SUD Canopy Disturbance Check");
   lines.push("Sentinel-2 NDVI / NDMI / NBR pre-post delta screening");
   lines.push("");
-
-  // Who the result is for, where anyone said. A record that names no project
-  // cannot be quoted against a registry figure, and one that names no analyst
-  // cannot be attributed. Absent lines are omitted rather than printed empty:
-  // an internal screening run is a legitimate thing to have made, and a blank
-  // field would read as an unanswered question.
-  if (isDelivery(state.delivery)) {
-    if (state.delivery.project.trim()) {
-      lines.push(`Project           ${state.delivery.project.trim()}`);
-    }
-    if (state.delivery.client.trim()) {
-      lines.push(`Prepared for      ${state.delivery.client.trim()}`);
-    }
-    if (state.delivery.analyst.trim()) {
-      lines.push(`Analyst           ${state.delivery.analyst.trim()}`);
-    }
-    lines.push("");
-  }
   const mask = CLOUD_MASKS[state.maskId];
 
   lines.push(`Run at            ${runAt.toISOString()}`);
@@ -57,16 +39,8 @@ export function buildManifest(state: State, runAt: Date): string {
   lines.push(`Catalogue         ${EARTH_SEARCH_URL}`);
   lines.push(`Collection        ${S2_STAC_COLLECTION} (Sentinel-2 L2A COGs on AWS Open Data)`);
   lines.push(`Radiometry        BOA offset removed where the catalogue reported it present`);
-  // What the mask reported once it had started, in preference to its label. A
-  // model that fell back from WebGPU to wasm ran the same weights, but the
-  // record should say which, and only the run knows.
-  const ran = state.results.find((result) => result.maskDescription);
-  const castShadow =
-    state.maskId === "scl"
-      ? `, cast shadow ${state.maskOptions.rejectCastShadow ? "rejected" : "kept"}`
-      : "";
   lines.push(
-    `Cloud removal     ${ran?.maskDescription ?? mask?.label ?? state.maskId}${castShadow}, snow ${state.maskOptions.rejectSnow ? "rejected" : "kept"}`,
+    `Cloud removal     ${mask?.label ?? state.maskId}, cast shadow ${state.maskOptions.rejectCastShadow ? "rejected" : "kept"}, snow ${state.maskOptions.rejectSnow ? "rejected" : "kept"}`,
   );
   lines.push(
     `Scene filter      eo:cloud_cover < ${state.maxCloud} percent, applied before download`,

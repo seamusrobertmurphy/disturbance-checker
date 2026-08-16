@@ -8,7 +8,7 @@
 // and any SOP constant that has been changed without being argued for.
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -244,34 +244,7 @@ assert.equal(
   "activate should fail when the host offers no panel surface",
 );
 
-// The cloud model, checked as files rather than as an intention.
-//
-// The deploy copies these into the published plugin directory and the mask
-// fetches them by name at runtime, so a rename or a half-written export is a
-// mask that 404s in front of a client rather than a build that fails here. The
-// report is read too: an export whose logits drifted from the torch model it
-// came from must not ship merely because a file of the right name is present.
-const vendor = join(root, "vendor");
-const modelReport = JSON.parse(
-  readFileSync(join(vendor, "cloud-model.json"), "utf8"),
-);
-let modelBytes = 0;
-for (const name of ["ocm-v4-regnety", "ocm-v4-edgenext"]) {
-  const { size } = statSync(join(vendor, `${name}.onnx`));
-  assert.ok(
-    size > 1024 * 1024,
-    `vendor/${name}.onnx is ${size} bytes, too small to hold the weights. Re-run scripts/export-cloud-model.py.`,
-  );
-  assert.equal(
-    modelReport[name]?.matchesTorch,
-    true,
-    `vendor/cloud-model.json does not record ${name} as matching the torch model it was converted from`,
-  );
-  modelBytes += size;
-}
-
 console.log("smoke test passed");
 console.log(`  guides   ${guides.length}, ${crossLinks} cross-links resolved`);
-console.log(`  model    2 files, ${(modelBytes / 1048576).toFixed(0)} MB, both verified against torch`);
 console.log(`  bundle   ${(readFileSync(join(root, "dist/index.js")).length / 1024).toFixed(0)} kB`);
 console.log(`  plugin   ${plugin.id} v${plugin.version}`);

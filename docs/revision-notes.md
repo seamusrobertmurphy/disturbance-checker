@@ -12,28 +12,23 @@ are gone because the conditions that produced them are gone.
 
 ## Known gaps
 
-### 1. The model mask is not the default, and is slow over large areas
+### 1. Cloud masking is categorical
 
-Done, with two edges left. OmniCloudMask now runs in the tab behind the same
-`CloudMask` interface, on WebGPU where the browser has it. See
-[methods.md](methods.md) for what it was measured to do.
+SCL is the only quality layer a browser can read anonymously, and it is a class
+label rather than a probability. It misses thin cloud edges, confuses bright
+bare ground with cloud, and forces the composite to be a median because there is
+no score to rank observations on. This is the largest single difference from the
+Earth Engine build and the reason the stability floor now binds.
 
-What remains. It costs roughly half a second per overpass per block, so a
-rectangle of several thousand square kilometres is an hour of inference and the
-scene classification stays the practical choice there; the panel says so, but
-the run does not yet estimate the cost from the block and overpass counts and
-offer the swap before starting. And each block is normalised independently,
-which is what the package's own patch normalisation does, but the package
-overlaps its patches by 300 pixels and feathers the joins, while blocks here
-abut. Seams have not been seen in a result and have not been looked for
-carefully either.
+*Where:* `src/raster/mask.ts`. The `CloudMask` interface is async and receives
+the whole scene block precisely so this can be replaced without touching a
+caller.
 
-*Where:* `src/raster/omni.ts`, and `BLOCK_SIZE` in `src/analysis/run.ts`.
-
-*Fix:* run the mask at 40 m for the speed case. Measured on the same block, that
-is four times cheaper and changes the keep-or-discard decision on 5.4 percent of
-pixels, mostly at cloud edges, which is a trade to offer rather than to make
-silently.
+*Fix:* export a segmentation model such as OmniCloudMask to ONNX and run it with
+`onnxruntime-web`, ideally on WebGPU with a WASM fallback. It needs red, green
+and NIR at 10 m, which are already being fetched. Expected cost is model weights
+in the tens of megabytes, which wants a cache and a first-run download notice.
+This is the highest-value item on the list.
 
 ### 2. Thresholds re-run the whole analysis
 
