@@ -73,6 +73,14 @@ jobs:
           GEOLIBRE_APP_BASE: /${{ github.event.repository.name }}/
         run: |
           npm ci
+          # MapLibre's image queue drainer reads abortController off entries it
+          # has already cleared, so every basemap tile queued above the
+          # sixteen-request cap rejects once with a TypeError and lands in the
+          # diagnostics panel. The defect is upstream and version-pinned here,
+          # so it is repaired at its source before the bundle is built, leaving
+          # the plugin bytes untouched. The script fails the build if the
+          # pinned MapLibre ever changes shape.
+          node ../plugin/scripts/patch-maplibre-image-queue.mjs
           npm run build
 
       - name: Fail if the plugin did not make it into the build output
