@@ -5,7 +5,7 @@ import {
   type Observation,
 } from "../stac/search";
 import { NODATA, type SceneBlock } from "./cog";
-import type { CloudMask, MaskOptions } from "./mask";
+import type { BlockShape, CloudMask, MaskOptions } from "./mask";
 import { combineWater } from "./mask";
 
 // Reducing a stack of observations to one composite.
@@ -122,6 +122,8 @@ export interface CompositeInput {
   mask: CloudMask;
   maskOptions: MaskOptions;
   length: number;
+  /** The block's width and height, for a mask that reads shape not pixels. */
+  shape: BlockShape;
   /** Indices into `observations` whose blocks carry blue and green. */
   rgbSubset: number[];
 }
@@ -129,7 +131,7 @@ export interface CompositeInput {
 export async function buildComposite(
   input: CompositeInput,
 ): Promise<CompositeBlock> {
-  const { observations, blocks, mask, maskOptions, length } = input;
+  const { observations, blocks, mask, maskOptions, length, shape } = input;
   // Every tile of one overpass carries the same radiometry, so the correction
   // is read off whichever tile the observation was built from first.
   const offsets = observations.map((observation) =>
@@ -139,7 +141,7 @@ export async function buildComposite(
   const keeps: Uint8Array[] = [];
   const waters: Uint8Array[] = [];
   for (const block of blocks) {
-    keeps.push(await mask.evaluate(block, maskOptions));
+    keeps.push(await mask.evaluate(block, maskOptions, shape));
     waters.push(await mask.water(block));
   }
 

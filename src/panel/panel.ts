@@ -63,7 +63,7 @@ import {
   isReadyToRun,
 } from "../state";
 import { GeoLibreAppAPI } from "../types/geolibre";
-import { button, clear, el, field, formatDuration, formatHectares, input } from "./dom";
+import { button, clear, el, field, formatDuration, formatHectares, input, select } from "./dom";
 import { renderHistogramPlot } from "./histogram-plot";
 
 const OPEN_SECTIONS_KEY = "tuvsud.disturbance.openSections";
@@ -646,34 +646,53 @@ export class DisturbancePanel {
       body.appendChild(
         field(
           "Cloud masking",
-          el("div", "dc-static", mask.label),
+          select(
+            Object.values(CLOUD_MASKS).map((option) => ({
+              value: option.id,
+              label: option.label,
+            })),
+            mask.id,
+            (value) => {
+              this.patch({
+                maskId: value,
+                status:
+                  this.state.status === "complete" ? "stale" : this.state.status,
+              });
+            },
+          ),
           mask.description,
         ),
       );
     }
 
-    const castShadow = input(
-      "checkbox",
-      String(this.state.maskOptions.rejectCastShadow),
-      () => {},
-    );
-    castShadow.checked = this.state.maskOptions.rejectCastShadow;
-    castShadow.addEventListener("change", () => {
-      this.patch({
-        maskOptions: {
-          ...this.state.maskOptions,
-          rejectCastShadow: castShadow.checked,
-        },
-        status: this.state.status === "complete" ? "stale" : this.state.status,
+    // Cast shadow is a scene-classification setting, so it is shown only when
+    // that is what is running. The model has no such class: it was trained to
+    // tell a cloud's shadow from a hillside in shade, which is the question
+    // this switch exists to work around.
+    if (this.state.maskId === "scl") {
+      const castShadow = input(
+        "checkbox",
+        String(this.state.maskOptions.rejectCastShadow),
+        () => {},
+      );
+      castShadow.checked = this.state.maskOptions.rejectCastShadow;
+      castShadow.addEventListener("change", () => {
+        this.patch({
+          maskOptions: {
+            ...this.state.maskOptions,
+            rejectCastShadow: castShadow.checked,
+          },
+          status: this.state.status === "complete" ? "stale" : this.state.status,
+        });
       });
-    });
-    body.appendChild(
-      field(
-        "Reject cast shadow",
-        castShadow,
-        "Scene classification class 2 covers both cloud shadow the classifier declined to call class 3 and ordinary topographic shade. Rejecting it is right on flat ground. In steep terrain it can remove most north-facing slopes from every scene in the window, which costs more than the cloud it avoids.",
-      ),
-    );
+      body.appendChild(
+        field(
+          "Reject cast shadow",
+          castShadow,
+          "Scene classification class 2 covers both cloud shadow the classifier declined to call class 3 and ordinary topographic shade. Rejecting it is right on flat ground. In steep terrain it can remove most north-facing slopes from every scene in the window, which costs more than the cloud it avoids.",
+        ),
+      );
+    }
 
     const snow = input("checkbox", String(this.state.maskOptions.rejectSnow), () => {});
     snow.checked = this.state.maskOptions.rejectSnow;
@@ -692,11 +711,17 @@ export class DisturbancePanel {
     );
 
     body.appendChild(
-      this.notice(
-        "warning",
-        "Weaker than Cloud Score+",
-        "The Earth Engine build ranked every pixel on Cloud Score+, a continuous clarity score, and kept the single clearest observation. No equivalent score is published in a form a browser can read, so this build masks on the categorical scene classification and takes a median instead. Thin cloud edges survive masking more often, and the composite needs enough clear looks to be stable. Read the overpass counts and the coverage warnings before accepting a result.",
-      ),
+      this.state.maskId === "scl"
+        ? this.notice(
+            "warning",
+            "A better mask is available",
+            "The scene classification is a per-pixel category, and what it lets through is thin cloud edges and cloud shadow, both of which read as canopy loss in a delta. On a 61 percent cloudy overpass of a Montana project it called 11.4 percent of a block clear where the segmentation model called it cloud or shadow, against 0.75 percent the other way. Switch the mask above where the result matters. It costs a 57 MB download once, and per overpass per block 0.26 seconds in a browser with WebGPU or 6.3 seconds without it.",
+          )
+        : this.notice(
+            "info",
+            "Model runs in this tab",
+            "The weights download once, then stay in the browser cache. Use a browser with WebGPU: measured in Chrome 151, one block through both models takes 0.26 seconds on WebGPU and 6.3 seconds without it, and the run manifest records which one you got. Snow, saturated and no-data pixels still come from the scene classification, which is authoritative about all three.",
+          ),
     );
 
     return body;

@@ -82,12 +82,14 @@ the SOP PDF, the QGIS script and the ArcGIS script disagree with each other.
 
 ## What is different, and why
 
-**Cloud masking is weaker, and this is the one that matters.** The scripts rank
-every pixel on Cloud Score+ and keep the single clearest observation. That score
-is a Google product and exists only inside Earth Engine. This build masks on the
-Sen2Cor scene classification and takes a median instead, which is the SOP's own
-documented alternative. Thin cloud survives more often, and the SOP's floor of
-four clear scenes has gone from advisory to binding. Read the overpass counts.
+**Cloud masking works differently.** The scripts rank every pixel on Cloud
+Score+ and keep the single clearest observation. That score is a Google product
+and exists only inside Earth Engine. This build offers the Sen2Cor scene
+classification, which is weaker, or a segmentation model run in the tab, which
+catches thin edges and cloud shadow the classification lets through. Either way
+there is no clarity score to rank on, so the reduction is a median, which is the
+SOP's own documented alternative, and the SOP's floor of four clear scenes has
+gone from advisory to binding. Read the overpass counts.
 
 **Water comes from the scene classification, not JRC Global Surface Water.** GSW
 is an Earth Engine asset with no open equivalent. The two disagree on seasonal
@@ -119,8 +121,9 @@ Drive. That is not implemented here, and it is the largest deliberate gap.
 **Export.** Batch export to Drive or Cloud Storage, at 10 m, outliving the
 session. If you need archived rasters, run the script.
 
-**Cloud Score+.** The best cloud masking available for Sentinel-2, and it is not
-reachable from a browser. This is the real cost of the move.
+**Cloud Score+.** Not reachable from a browser, and nothing else offers a
+continuous clarity score to rank observations on, which is why the reduction
+here is a median rather than a best-pixel pick.
 
 **Arbitrary analysis.** The code pane runs any Earth Engine expression. The
 panel runs one analysis with parameters. For anything outside the SOP, the

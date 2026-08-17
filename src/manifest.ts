@@ -32,6 +32,7 @@ export function buildManifest(state: State, runAt: Date): string {
   lines.push("TUV SUD Canopy Disturbance Check");
   lines.push("Sentinel-2 NDVI / NDMI / NBR pre-post delta screening");
   lines.push("");
+
   const mask = CLOUD_MASKS[state.maskId];
 
   lines.push(`Run at            ${runAt.toISOString()}`);
@@ -39,8 +40,16 @@ export function buildManifest(state: State, runAt: Date): string {
   lines.push(`Catalogue         ${EARTH_SEARCH_URL}`);
   lines.push(`Collection        ${S2_STAC_COLLECTION} (Sentinel-2 L2A COGs on AWS Open Data)`);
   lines.push(`Radiometry        BOA offset removed where the catalogue reported it present`);
+  // What the mask reported once it had started, in preference to its label. A
+  // model that fell back from WebGPU to wasm ran the same weights, but the
+  // record should say which, and only the run knows.
+  const ran = state.results.find((result) => result.maskDescription);
+  const castShadow =
+    state.maskId === "scl"
+      ? `, cast shadow ${state.maskOptions.rejectCastShadow ? "rejected" : "kept"}`
+      : "";
   lines.push(
-    `Cloud removal     ${mask?.label ?? state.maskId}, cast shadow ${state.maskOptions.rejectCastShadow ? "rejected" : "kept"}, snow ${state.maskOptions.rejectSnow ? "rejected" : "kept"}`,
+    `Cloud removal     ${ran?.maskDescription ?? mask?.label ?? state.maskId}${castShadow}, snow ${state.maskOptions.rejectSnow ? "rejected" : "kept"}`,
   );
   lines.push(
     `Scene filter      eo:cloud_cover < ${state.maxCloud} percent, applied before download`,

@@ -66,9 +66,10 @@ credentials, so it cannot be part of a tool that requires none. Harmonised
 Landsat and Sentinel products are out of reach for the same reason.
 
 **Cloud Score+.** Google's per-pixel clarity score exists only inside Earth
-Engine. There is no equivalent published as a COG. What this costs, and what
-replaced it, is set out in [methods.md](methods.md) and is the single most
-important difference between this build and the one it replaces.
+Engine, and nothing equivalent is published as a COG. Cloud is removed here
+either from the scene classification or by a segmentation model run in the tab,
+whose weights are MIT and are served from this deployment rather than fetched
+from anyone. See [methods.md](methods.md).
 
 **JRC Global Surface Water.** Also an Earth Engine asset. Water is now taken
 from the scene classification's own water class, combined across the window.

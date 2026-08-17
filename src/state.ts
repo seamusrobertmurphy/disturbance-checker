@@ -43,7 +43,7 @@ export interface State {
   aoiLabel: string;
   periods: Period[];
   maxCloud: number;
-  /** Which cloud mask is in force. Only the SCL mask exists today. */
+  /** Which cloud mask is in force. */
   maskId: string;
   maskOptions: MaskOptions;
 

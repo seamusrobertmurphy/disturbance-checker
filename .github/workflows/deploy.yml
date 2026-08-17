@@ -65,6 +65,47 @@ jobs:
           cp plugin/dist/style.css "$target/dist/style.css"
           ls -la "$target" "$target/dist"
 
+      # The cloud model and the runtime that executes it.
+      #
+      # Kept out of the plugin bundle and fetched at runtime from this
+      # directory, because the plugin is built as one inlined ES module: a
+      # bundled runtime would land in every load of the app whether or not
+      # anyone selects that mask. Only a run that asks for it pays.
+      #
+      # The weights are committed, so what a tagged deploy runs cannot change
+      # under it. The wasm is not: it comes from the onnxruntime-web pinned in
+      # package-lock.json, so it never enters this repository's history.
+      - name: Ship the cloud model and its runtime
+        run: |
+          target="geolibre/apps/geolibre-desktop/public/plugins/${PLUGIN_ID}/vendor"
+          runtime="plugin/node_modules/onnxruntime-web/dist"
+          mkdir -p "$target"
+          cp plugin/vendor/ocm-v4-regnety.onnx "$target/"
+          cp plugin/vendor/ocm-v4-edgenext.onnx "$target/"
+          cp plugin/vendor/cloud-model.json "$target/"
+          cp "$runtime/ort.webgpu.min.mjs" "$target/"
+
+          # Which wasm goes with it is read out of the runtime rather than
+          # named here. onnxruntime-web renames these between versions, and a
+          # hand-written list that has gone stale fails only in a browser, as
+          # "no available backend found", which is the most expensive place to
+          # find it. v0.11.0 shipped the jsep pair when 1.27 wanted asyncify.
+          needed=$(grep -o 'ort-wasm[a-z0-9.-]*\.mjs' "$runtime/ort.webgpu.min.mjs" | sort -u)
+          if [ -z "$needed" ]; then
+            echo "Could not read any wasm loader name out of ort.webgpu.min.mjs"
+            exit 1
+          fi
+          for loader in $needed; do
+            binary="${loader%.mjs}.wasm"
+            if [ ! -f "$runtime/$loader" ] || [ ! -f "$runtime/$binary" ]; then
+              echo "onnxruntime-web references $loader but $runtime does not carry it and its .wasm"
+              exit 1
+            fi
+            cp "$runtime/$loader" "$runtime/$binary" "$target/"
+            echo "runtime: $loader with $binary"
+          done
+          du -h "$target"/* | sort -h
+
       - name: Build the GeoLibre web app
         working-directory: geolibre
         env:
@@ -91,6 +132,23 @@ jobs:
             exit 1
           fi
           echo "Plugin present: $(du -h "$out" | cut -f1)"
+          vendor="geolibre/apps/geolibre-desktop/dist/plugins/${PLUGIN_ID}/vendor"
+          for file in ocm-v4-regnety.onnx ocm-v4-edgenext.onnx ort.webgpu.min.mjs; do
+            if [ ! -s "$vendor/$file" ]; then
+              echo "The cloud mask would 404 at runtime: $vendor/$file is missing or empty"
+              exit 1
+            fi
+          done
+          # Every loader the runtime can reach for must be beside it, with its
+          # binary. This is the check that would have caught v0.11.0.
+          for loader in $(grep -o 'ort-wasm[a-z0-9.-]*\.mjs' "$vendor/ort.webgpu.min.mjs" | sort -u); do
+            if [ ! -s "$vendor/$loader" ] || [ ! -s "${vendor}/${loader%.mjs}.wasm" ]; then
+              echo "The runtime asks for $loader but it or its .wasm is not published beside it"
+              exit 1
+            fi
+            echo "runtime present: $loader"
+          done
+          echo "Cloud model present: $(du -sh "$vendor" | cut -f1)"
 
       # Two things every colleague should get without touching a control.
       #
