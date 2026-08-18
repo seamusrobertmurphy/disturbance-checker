@@ -332,7 +332,7 @@ export class DisturbancePanel {
 
   private summariseResults(): string {
     if (this.state.status === "complete") return "complete";
-    if (this.state.status === "stale") return "session expired";
+    if (this.state.status === "stale") return "parameters changed";
     if (this.state.status === "error") return "failed";
     return "";
   }
@@ -1206,7 +1206,7 @@ export class DisturbancePanel {
       el(
         "p",
         "dc-hint",
-        "Moving a break changes the classification, which is computed by Earth Engine. Applying re-runs the classification step against the current thresholds.",
+        "Moving a break changes where the class boundaries fall. Applying re-runs the check against the current thresholds, which re-reads the imagery, so it costs a full run rather than a reclassification.",
       ),
     );
 
