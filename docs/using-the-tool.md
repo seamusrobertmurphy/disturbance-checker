@@ -94,6 +94,8 @@ The table under the charts gives the mean temperature, sunlight, total rain and
 snow days inside each window, pre against post, and the same numbers go into
 the manifest in section 8 so a finding can quote them. Nothing here is an input
 to the analysis. It is context for a decision the tool leaves to you.
+[Matching the season](season-matching.md) works through four cases with
+screenshots and gives the reasons and the references.
 
 **Maximum scene cloud cover** discards whole scenes that are cloudier than the
 threshold before any per-pixel masking runs. Leave it at 30. Drop it to 20 in

@@ -4,6 +4,7 @@ import fromQgis from "../../docs/from-qgis.md";
 import interpretingResults from "../../docs/interpreting-results.md";
 import methods from "../../docs/methods.md";
 import revisionNotes from "../../docs/revision-notes.md";
+import seasonMatching from "../../docs/season-matching.md";
 import usingTheTool from "../../docs/using-the-tool.md";
 
 // The documentation library. Guides are authored as markdown in docs/ so they
@@ -53,6 +54,14 @@ export const GUIDES: Guide[] = [
       "What the layers mean, reading the histogram before trusting the map, and what to confirm before raising anything.",
     audience: "operator",
     html: interpretingResults,
+  },
+  {
+    id: "season-matching",
+    title: "Matching the season",
+    summary:
+      "Why the pre and post windows must sit at the same point of the season, what each index does through the year, four worked examples with the season charts, and the published work behind the rule.",
+    audience: "operator",
+    html: seasonMatching,
   },
   {
     id: "from-qgis",

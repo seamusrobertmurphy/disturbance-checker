@@ -11,26 +11,30 @@ bottom of the tool panel.
 2. [Interpreting results](interpreting-results.md) — what the layers mean, how
    to read the histogram before trusting the map, how to cross-check the three
    indices, and what to confirm before raising anything.
+3. [Matching the season](season-matching.md) — why the pre and post windows
+   must sit at the same point of the season, what each index does through the
+   year, four worked examples with the season charts, and the published work
+   behind the rule.
 
 ## Method and reference
 
-3. [From QGIS to the browser](from-qgis.md) — what this tool replaces, what is
+4. [From QGIS to the browser](from-qgis.md) — what this tool replaces, what is
    deliberately identical, what changed and why, and what the QGIS script still
    does better. Illustrated with the original SOP screenshots.
-4. [Methods reference](methods.md) — the full processing chain with every
+5. [Methods reference](methods.md) — the full processing chain with every
    constant, and a table of where the SOP PDF, the QGIS script and the ArcGIS
    script disagree.
 
 ## For whoever sets it up
 
-5. [Data and access](data-access.md) — where the imagery comes from, the two
+6. [Data and access](data-access.md) — where the imagery comes from, the three
    hosts a run needs to reach, and why there is nothing to sign in to.
-6. [First run](first-run.md) — the three ways to reach a live run, what each
+7. [First run](first-run.md) — the three ways to reach a live run, what each
    stage looks like, and the failures most likely to appear.
 
 ## For maintainers
 
-7. [Revision notes](revision-notes.md) — known gaps, why each matters, where a
+8. [Revision notes](revision-notes.md) — known gaps, why each matters, where a
    change would go, and findings from live runs.
 
 ## Adding a guide
