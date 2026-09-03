@@ -6,7 +6,8 @@ import {
 } from "../reference/climate";
 import { svgEl } from "./dom";
 
-const WIDTH = 260;
+/** Drawn width when the panel has not been measured yet. */
+const DEFAULT_WIDTH = 260;
 const HEIGHT = 74;
 const PAD_LEFT = 24;
 const PAD_RIGHT = 4;
@@ -55,13 +56,20 @@ const MONTH_LETTERS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D
  * point of the season, and did the season run early or late in either year.
  * Everything else is left off.
  */
-export function renderClimographPanel(options: ClimographPanelOptions): SVGSVGElement {
+export function renderClimographPanel(
+  options: ClimographPanelOptions,
+  width: number = DEFAULT_WIDTH,
+): SVGSVGElement {
   const { lines, reference, spans, floorAtZero } = options;
+  const WIDTH = Math.max(160, Math.round(width));
 
+  // The viewBox matches the drawn width, so nothing is stretched. A fixed
+  // viewBox scaled to the panel would draw the text twice as wide in a
+  // floating panel as in the docked one.
   const svg = svgEl("svg", {
     class: "dc-climograph",
     viewBox: `0 0 ${WIDTH} ${HEIGHT}`,
-    preserveAspectRatio: "none",
+    preserveAspectRatio: "xMinYMin meet",
     role: "img",
     "aria-label": `${options.title}, ${options.unit}, by day of year`,
   });
@@ -249,4 +257,32 @@ export function renderClimographPanel(options: ClimographPanelOptions): SVGSVGEl
   });
 
   return svg;
+}
+
+/**
+ * A chart that follows the width of the element holding it.
+ *
+ * The panel is 380 px docked and 460 px floating, and a colleague may drag
+ * it wider still, so the chart is drawn at the width it is given and drawn
+ * again when that changes.
+ */
+export function mountClimographPanel(options: ClimographPanelOptions): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "dc-climograph-wrap";
+  let drawnAt = 0;
+  const draw = (width: number) => {
+    const target = width > 0 ? width : DEFAULT_WIDTH;
+    if (Math.abs(target - drawnAt) < 4) return;
+    drawnAt = target;
+    while (wrap.firstChild) wrap.removeChild(wrap.firstChild);
+    wrap.appendChild(renderClimographPanel(options, target));
+  };
+  draw(wrap.clientWidth);
+  if (typeof ResizeObserver !== "undefined") {
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) draw(entry.contentRect.width);
+    });
+    observer.observe(wrap);
+  }
+  return wrap;
 }

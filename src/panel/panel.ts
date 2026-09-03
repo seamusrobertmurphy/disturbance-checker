@@ -84,7 +84,7 @@ import {
 import { GeoLibreAppAPI } from "../types/geolibre";
 import { button, clear, el, field, formatDuration, formatHectares, input, select } from "./dom";
 import { renderHistogramPlot } from "./histogram-plot";
-import { renderClimographPanel, yearColour } from "./climograph-plot";
+import { mountClimographPanel, yearColour } from "./climograph-plot";
 
 const OPEN_SECTIONS_KEY = "tuvsud.disturbance.openSections";
 
@@ -1086,7 +1086,7 @@ export class DisturbancePanel {
     ) => {
       const smoothed = smooth(series.days, metric, width, mode);
       block.appendChild(
-        renderClimographPanel({
+        mountClimographPanel({
           title,
           unit,
           lines: linesByYear(series.days, smoothed, years),

@@ -50,9 +50,12 @@ rate of senescence read from index time series since the early AVHRR record
 
 **NDMI reads leaf water.** Liquid water in the leaf absorbs shortwave infrared
 at 1.6 micrometres, Sentinel-2 band 11, so a well-watered canopy is dark there
-and a dry one is bright (Gao 1996; Ceccato et al. 2001). NDMI pairs that band
-with the near infrared and tracks canopy water content, which is what makes it
-useful for harvest and thinning (Wilson and Sader 2002; Jin and Sader 2005).
+and a dry one is bright (Ceccato et al. 2001). NDMI pairs that band with the
+near infrared, the normalised difference infrared index of Hardisky et al.
+(1983), and tracks canopy water content, which is what makes it useful for
+harvest and thinning (Wilson and Sader 2002; Jin and Sader 2005). Gao's (1996)
+water index is often named as its origin but pairs two shorter bands, 0.86 and
+1.24 micrometres, and is a different measurement.
 The same sensitivity makes it the index most easily fooled by season. Drought
 raises shortwave infrared reflectance while the leaves are still on, so a dry
 August reads as moisture stress against a wet one. Senescence raises it before
@@ -318,6 +321,11 @@ Griffiths, P., van der Linden, S., Kuemmerle, T. and Hostert, P. (2013). A
 pixel-based Landsat compositing algorithm for large area land cover mapping.
 IEEE Journal of Selected Topics in Applied Earth Observations and Remote
 Sensing 6(5), 2088 to 2101. https://doi.org/10.1109/JSTARS.2012.2228167
+
+Hardisky, M. A., Klemas, V. and Smart, R. M. (1983). The influence of soil
+salinity, growth form, and leaf moisture on the spectral radiance of Spartina
+alterniflora canopies. Photogrammetric Engineering and Remote Sensing 49(1),
+77 to 83.
 
 Jin, S. and Sader, S. A. (2005). Comparison of time series tasseled cap
 wetness and the normalized difference moisture index in detecting forest

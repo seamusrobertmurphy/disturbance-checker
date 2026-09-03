@@ -951,6 +951,12 @@ select.dc-input {
   border-radius: 4px;
 }
 
+.dc-climograph-wrap {
+  display: block;
+  width: 100%;
+  min-height: 74px;
+}
+
 .dc-climograph {
   display: block;
   width: 100%;
