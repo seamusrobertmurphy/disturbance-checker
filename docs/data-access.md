@@ -30,13 +30,29 @@ and converted to COGs by Element 84. Copernicus data is free and open. Nothing
 in the chain is licensed to an individual, so nothing has to be granted to
 anyone.
 
+**NASA POWER**, at `https://power.larc.nasa.gov`, supplies the daily climate
+drawn under the reporting periods. It is the agency's surface climate service,
+built on the MERRA-2 reanalysis, on a grid half a degree of latitude by five
+eighths of a degree of longitude, from 1981 to a few days ago. It answers
+anonymous requests with `access-control-allow-origin: *` and needs no key. One
+request of a few hundred kilobytes fetches every year a check touches and the
+ten before them. It is context for placing the windows, never an input to the
+analysis, so a run works without it.
+
+Two other services were considered for the climate and set aside. Open-Meteo
+has a finer grid and the same anonymous access, but its free tier is for
+non-commercial use, which is the reason Earth Engine was dropped. Daymet is
+finer still over North America but its single-pixel service sends no CORS
+header, so a browser cannot read it.
+
 ## What has to be reachable
 
-A run needs HTTPS to exactly two hosts:
+A run needs HTTPS to exactly two hosts, and the season charts a third:
 
 ```
 earth-search.aws.element84.com
 sentinel-cogs.s3.us-west-2.amazonaws.com
+power.larc.nasa.gov
 ```
 
 On a corporate network that inspects or filters outbound traffic, these are the

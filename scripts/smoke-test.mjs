@@ -237,6 +237,64 @@ for (const guide of guides) {
 }
 assert.ok(crossLinks > 0, "no cross-document links were rewritten; the transform may be inert");
 
+// The climate arithmetic behind the season chart. A window mean read off the
+// wrong days, or a month-day that lands on a different slot in a leap year,
+// would be quoted in a finding, so the pure functions are pinned here.
+assert.equal(module.dayOfYearSlot("2024-03-01"), 60, "1 March lands on slot 60 in a leap year");
+assert.equal(module.dayOfYearSlot("2023-03-01"), 60, "1 March lands on the same slot in a common year");
+assert.equal(module.dayOfYearSlot("2024-12-31"), 365, "31 December is the last slot");
+assert.equal(module.eachDay("2024-02-27", "2024-03-02").length, 5, "eachDay spans 29 February");
+assert.equal(module.eachDay("2023-02-27", "2023-03-02").length, 4, "eachDay skips 29 February in a common year");
+
+const range = module.climateRange([
+  { id: "RP1", preStart: "2023-08-01", preEnd: "2023-09-01", postStart: "2024-08-01", postEnd: "2024-09-01" },
+]);
+assert.deepEqual(range.years, [2023, 2024], "period years are the years the four dates touch");
+assert.equal(range.start, "2013-01-01", "ten reference years precede the earliest period year");
+assert.equal(range.end, "2024-12-31", "the range runs to the end of the latest period year");
+
+const syntheticDays = module.eachDay("2023-01-01", "2023-01-10").map((date, i) => ({
+  date,
+  tMean: i,
+  tMax: i + 5,
+  tMin: i - 5,
+  rain: i,
+  sun: 10,
+  snow: i < 3 ? 2 : 0,
+}));
+const weekly = module.smooth(syntheticDays, "tMean", 7, "mean");
+assert.equal(weekly[5], 5, "a centred 7-day mean of 0..9 at index 5 is the mean of 2..8");
+assert.equal(weekly[0], 1.5, "an edge window with 4 of 7 days present is still averaged");
+const gappy = syntheticDays.map((day, i) => (i >= 1 && i <= 3 ? { ...day, tMean: null } : day));
+assert.equal(module.smooth(gappy, "tMean", 7, "mean")[0], null, "a window with fewer than half its days present is null");
+const rain3 = module.smooth(syntheticDays, "rain", 3, "sum");
+assert.equal(rain3[2], 3, "a trailing 3-day sum at index 2 is 0+1+2");
+
+const series = { latitude: 39.5, longitude: -121.5, elevation: null, start: "2023-01-01", end: "2023-01-10", days: syntheticDays, lastObserved: "2023-01-10", fetchedAt: 0 };
+const window = module.windowClimate(series, "2023-01-03", "2023-01-12");
+assert.equal(window.length, 10, "window length counts every calendar day asked for");
+assert.equal(window.observed, 8, "only days with data count as observed");
+assert.equal(window.tMean, (2 + 3 + 4 + 5 + 6 + 7 + 8 + 9) / 8, "window temperature is the mean over observed days");
+assert.equal(window.rain, 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9, "window rain is the total");
+assert.equal(window.snowDays, 1, "snow days count days with depth above zero");
+
+const spans = module.windowSpans([
+  { id: "RP1", preStart: "2023-03-01", preEnd: "2023-04-01", postStart: "2024-03-01", postEnd: "2024-04-01" },
+]);
+assert.equal(spans.length, 1, "matching month-days collapse to one shaded span");
+assert.equal(spans[0].label, "pre and post", "the shared span is labelled as both");
+const mismatched = module.windowSpans([
+  { id: "RP1", preStart: "2023-03-01", preEnd: "2023-04-01", postStart: "2023-09-30", postEnd: "2023-10-31" },
+]);
+assert.equal(mismatched.length, 2, "mismatched month-days draw two spans");
+
+const lines = module.linesByYear(syntheticDays, weekly, [2023, 2024]);
+assert.equal(lines.length, 1, "only years present in the record get a line");
+assert.equal(lines[0].values.length, 366, "a line has one slot per day of a leap year");
+assert.equal(lines[0].values[5], 5, "values land on their day-of-year slot");
+const reference = module.referenceLine(syntheticDays, weekly);
+assert.equal(reference[5], null, "a reference needs at least two years on a slot");
+
 // A host with no panel surface must fail activation rather than activate blind.
 assert.equal(
   plugin.activate({}),

@@ -939,3 +939,112 @@ select.dc-input {
   border: 1px solid rgba(128, 128, 128, 0.4);
   flex: none;
 }
+
+/* Seasonal climate --------------------------------------------------------- */
+
+.dc-climate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--dc-border);
+  border-radius: 4px;
+}
+
+.dc-climograph {
+  display: block;
+  width: 100%;
+  height: 74px;
+  overflow: visible;
+  touch-action: none;
+}
+
+.dc-climograph-window {
+  fill: var(--dc-accent);
+  fill-opacity: 0.14;
+}
+
+.dc-climograph-axis {
+  stroke: var(--dc-border);
+  stroke-width: 1;
+}
+
+.dc-climograph-zero {
+  stroke: var(--dc-fg-muted);
+  stroke-width: 1;
+  stroke-dasharray: 1 3;
+}
+
+.dc-climograph-reference {
+  stroke: var(--dc-fg-muted);
+  stroke-width: 2.25;
+  stroke-opacity: 0.45;
+  stroke-linejoin: round;
+}
+
+.dc-climograph-line {
+  stroke-width: 1.25;
+  stroke-linejoin: round;
+}
+
+.dc-climograph-cursor {
+  stroke: var(--dc-fg);
+  stroke-width: 0.75;
+  stroke-opacity: 0.6;
+  pointer-events: none;
+}
+
+.dc-climograph-tick,
+.dc-climograph-readout {
+  fill: var(--dc-fg-muted);
+  font-size: 7px;
+}
+
+.dc-climograph-readout {
+  fill: var(--dc-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.dc-climograph-title {
+  fill: var(--dc-fg);
+  font-size: 7.5px;
+  font-weight: 600;
+}
+
+.dc-legend-chip-mean {
+  background: var(--dc-fg-muted);
+  opacity: 0.55;
+}
+
+.dc-legend-chip-window {
+  background: var(--dc-accent);
+  opacity: 0.5;
+}
+
+.dc-climate-table caption {
+  padding: 2px 4px;
+  color: var(--dc-fg-muted);
+  font-weight: 600;
+  text-align: left;
+  caption-side: top;
+}
+
+.dc-attribution {
+  font-size: 10px;
+}
+
+.dc-spinner {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border: 2px solid var(--dc-border);
+  border-top-color: var(--dc-accent);
+  border-radius: 50%;
+  animation: dc-spin 0.9s linear infinite;
+}
+
+@keyframes dc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

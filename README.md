@@ -36,7 +36,8 @@ Seven sections, in order:
 2. **Area of interest** — typed bounds, pasted GeoJSON, or an uploaded project
    boundary.
 3. **Reporting periods** — pre and post windows, one or many, plus the cloud
-   ceiling.
+   ceiling, with the daily climate at the site drawn under them so the windows
+   can be placed at matching points of the season.
 4. **Severity thresholds** — the Low, Moderate and High cut points for each of
    the three differenced indices, editable before the first run.
 5. **Site data** — project boundary, streamside management zones, and plot

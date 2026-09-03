@@ -113,6 +113,26 @@ differently from the Earth Engine build.
 *Fix:* if a stable water layer matters, an open COG equivalent would need
 finding first. Not obviously available.
 
+### 8. The season charts show climate, not greenness
+
+The charts under the reporting periods draw temperature, sunlight, rain and
+snow from NASA POWER, on a grid about fifty kilometres across. They show
+whether the season ran early or late. They do not show the thing the delta
+actually depends on, which is how green the canopy was inside each window, and
+in a mixed deciduous stand that is what decides whether two composites are
+comparable.
+
+*Where:* `src/reference/climate.ts` and `renderClimate` in
+`src/panel/panel.ts`.
+
+*Fix:* a greenness curve from the imagery itself. The mean NDVI over the area
+of interest for every clear overpass in a year, drawn on the same January to
+December axis, would put the phenology beside the climate that drives it. The
+cost is reading every scene of the year over the area rather than the two
+windows, which for a small project is a few hundred range reads and for a large
+one is the run time the tool already struggles with. Worth doing behind a
+button rather than automatically, and only over the working grid.
+
 ---
 
 ## Findings from live runs

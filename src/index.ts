@@ -67,7 +67,7 @@ function helpMenuItems(app: GeoLibreAppAPI): GeoLibreToolbarMenuItem[] {
 const plugin: GeoLibrePlugin = {
   id: PANEL_ID,
   name: "Disturbance Check",
-  version: "0.12.0",
+  version: "0.13.0",
   // Neither a Cloud project nor an OAuth client is a parameter any more.
   // Nothing this plugin reads requires an account, so the only thing left
   // worth linking to is a guide page.
@@ -201,3 +201,15 @@ export { plugin };
 // means unlabelled points on every screenshot, so the heuristic is tested.
 export { detectLabelField } from "./vector/import";
 export { GUIDES, findGuide, AUDIENCE_ORDER } from "./help/registry";
+// The climate arithmetic is tested too, because a window mean read off the
+// wrong days would be quoted in a finding with a straight face.
+export {
+  climateRange,
+  dayOfYearSlot,
+  eachDay,
+  linesByYear,
+  referenceLine,
+  smooth,
+  windowClimate,
+  windowSpans,
+} from "./reference/climate";

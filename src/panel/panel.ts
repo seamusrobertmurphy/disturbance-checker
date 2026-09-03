@@ -13,7 +13,7 @@ import {
   aoiBounds,
   runPeriod,
 } from "../analysis/run";
-import { describeError } from "../errors";
+import { describeClimateError, describeError } from "../errors";
 import { CLOUD_MASKS } from "../raster/mask";
 import { gridCornersLonLat } from "../raster/grid";
 import {
@@ -47,6 +47,25 @@ import {
   loadReleases,
   type Look,
 } from "../reference/wayback";
+import {
+  POWER_ATTRIBUTION,
+  RAIN_SUM_DAYS,
+  REFERENCE_YEARS,
+  SMOOTHING_DAYS,
+  centreOf,
+  climateKey,
+  climateRange,
+  fetchClimate,
+  hasSnow,
+  linesByYear,
+  periodClimates,
+  referenceLine,
+  smooth,
+  windowSpans,
+  type ClimateSeries,
+  type Metric,
+  type WindowClimate,
+} from "../reference/climate";
 import { buildManifest } from "../manifest";
 import { MapLayerManager } from "../map/layers";
 import {
@@ -65,6 +84,7 @@ import {
 import { GeoLibreAppAPI } from "../types/geolibre";
 import { button, clear, el, field, formatDuration, formatHectares, input, select } from "./dom";
 import { renderHistogramPlot } from "./histogram-plot";
+import { renderClimographPanel, yearColour } from "./climograph-plot";
 
 const OPEN_SECTIONS_KEY = "tuvsud.disturbance.openSections";
 
@@ -97,6 +117,8 @@ export class DisturbancePanel {
   private landfireLegend: Array<{ label: string; swatch: string }> = [];
   private open: Set<string>;
   private readonly layers: MapLayerManager;
+  /** The climate request in flight, so a change of area cancels it. */
+  private climateAbort: AbortController | null = null;
 
   constructor(
     private readonly app: GeoLibreAppAPI,
@@ -936,6 +958,8 @@ export class DisturbancePanel {
       );
     }
 
+    body.appendChild(this.renderClimate());
+
     body.appendChild(
       el(
         "p",
@@ -973,6 +997,259 @@ export class DisturbancePanel {
     );
 
     return body;
+  }
+
+  // Seasonal climate ---------------------------------------------------------
+  //
+  // Drawn inside the reporting periods section because that is where the
+  // decision it informs is made. The delta only measures disturbance when the
+  // pre and post composites were taken at the same point of the season, and
+  // the SOP's advice to match calendar dates assumes the season itself ran on
+  // time in both years. These curves show whether it did.
+
+  private renderClimate(): HTMLElement {
+    const block = el("div", "dc-climate");
+    block.appendChild(el("div", "dc-field-label", "Season at the site"));
+
+    if (!this.state.aoi) {
+      block.appendChild(
+        el(
+          "p",
+          "dc-hint",
+          "Set an area of interest in section 2 and the seasonal climate at its centre is drawn here, with the pre and post windows shaded over it.",
+        ),
+      );
+      return block;
+    }
+
+    this.ensureClimate();
+
+    if (this.state.climateStatus === "loading" || this.state.climateStatus === "idle") {
+      const line = el("div", "dc-status-line");
+      line.appendChild(el("span", "dc-spinner"));
+      line.appendChild(
+        el("span", "dc-status-text", "Reading daily climate from NASA POWER."),
+      );
+      block.appendChild(line);
+      return block;
+    }
+
+    if (this.state.climateStatus === "error" || !this.state.climate) {
+      block.appendChild(
+        this.notice(
+          "warning",
+          "The seasonal climate could not be read",
+          `${this.state.climateError ?? "No data came back."} The windows can still be set and the run does not depend on it.`,
+        ),
+      );
+      block.appendChild(button("Try again", () => this.startClimate(true)));
+      return block;
+    }
+
+    const series = this.state.climate;
+    const { years } = climateRange(this.state.periods);
+    const spans = windowSpans(this.state.periods);
+
+    const legend = el("div", "dc-legend");
+    years.forEach((year, index) => {
+      const item = el("span", "dc-legend-item");
+      const chip = el("span", "dc-legend-chip");
+      chip.style.background = yearColour(index);
+      item.appendChild(chip);
+      item.appendChild(el("span", "", String(year)));
+      legend.appendChild(item);
+    });
+    const meanItem = el("span", "dc-legend-item");
+    const meanChip = el("span", "dc-legend-chip dc-legend-chip-mean");
+    meanItem.appendChild(meanChip);
+    meanItem.appendChild(
+      el("span", "", `${series.start.slice(0, 4)} to ${series.end.slice(0, 4)} mean`),
+    );
+    legend.appendChild(meanItem);
+    const windowItem = el("span", "dc-legend-item");
+    const windowChip = el("span", "dc-legend-chip dc-legend-chip-window");
+    windowItem.appendChild(windowChip);
+    windowItem.appendChild(
+      el("span", "", spans.map((span) => `${span.label} window`).join(", ")),
+    );
+    legend.appendChild(windowItem);
+    block.appendChild(legend);
+
+    const panel = (
+      metric: Metric,
+      title: string,
+      unit: string,
+      width: number,
+      mode: "mean" | "sum",
+      floorAtZero: boolean,
+      digits: number,
+    ) => {
+      const smoothed = smooth(series.days, metric, width, mode);
+      block.appendChild(
+        renderClimographPanel({
+          title,
+          unit,
+          lines: linesByYear(series.days, smoothed, years),
+          reference: referenceLine(series.days, smoothed),
+          spans,
+          floorAtZero,
+          digits,
+        }),
+      );
+    };
+
+    panel("tMean", "Air temperature", "°C, 7-day mean", SMOOTHING_DAYS, "mean", false, 1);
+    panel("sun", "Sunlight", "MJ/m² a day, 7-day mean", SMOOTHING_DAYS, "mean", true, 1);
+    panel("rain", "Rain", "mm over the previous 28 days", RAIN_SUM_DAYS, "sum", true, 0);
+    if (hasSnow(series)) {
+      panel("snow", "Snow depth", "cm, 7-day mean", SMOOTHING_DAYS, "mean", true, 0);
+    }
+
+    block.appendChild(this.renderClimateTable(series));
+
+    block.appendChild(
+      el(
+        "p",
+        "dc-hint",
+        "Hover a chart to read the values. The shaded bands are the composite windows, and they should sit on the same part of every curve. A coloured line running above the grey mean in spring is a season that came early, so the leaves were further on than the calendar date says; one running below is a late season. A window with snow on the ground in one year and not the other is not a matched pair whatever the dates.",
+      ),
+    );
+
+    const where = `${Math.abs(series.latitude).toFixed(2)}° ${series.latitude >= 0 ? "N" : "S"}, ${Math.abs(series.longitude).toFixed(2)}° ${series.longitude >= 0 ? "E" : "W"}`;
+    const observed = series.lastObserved
+      ? `Observed to ${series.lastObserved}.`
+      : "No observations were returned for this range.";
+    block.appendChild(
+      el(
+        "p",
+        "dc-hint dc-attribution",
+        `${POWER_ATTRIBUTION}, read at ${where}${series.elevation !== null ? `, ${Math.round(series.elevation)} m` : ""}. The grid cell is about fifty kilometres across, so this is the season of the district rather than the weather at the plot. The grey line is the mean of the ${REFERENCE_YEARS} years before the earliest period year and the period years themselves. ${observed}`,
+      ),
+    );
+
+    return block;
+  }
+
+  /**
+   * Pre against post, per period, as the numbers a finding can quote.
+   *
+   * No threshold is applied. What counts as a large difference depends on the
+   * forest, and a verifier reads it against the curves above rather than
+   * against a number the tool made up.
+   */
+  private renderClimateTable(series: ClimateSeries): HTMLElement {
+    const wrap = el("div", "dc-stack");
+    const rows: Array<{
+      label: string;
+      read: (window: WindowClimate) => number | null;
+      digits: number;
+    }> = [
+      { label: "Mean temperature, °C", read: (w) => w.tMean, digits: 1 },
+      { label: "Sunlight, MJ/m² a day", read: (w) => w.sun, digits: 1 },
+      { label: "Rain over the window, mm", read: (w) => w.rain, digits: 0 },
+      { label: "Days with snow cover", read: (w) => w.snowDays, digits: 0 },
+    ];
+    const show = (value: number | null, digits: number): string =>
+      value === null ? "-" : value.toFixed(digits);
+
+    for (const entry of periodClimates(series, this.state.periods)) {
+      const table = el("table", "dc-table dc-climate-table");
+      const caption = el(
+        "caption",
+        "",
+        `${entry.periodId}, pre ${entry.pre.start} to ${entry.pre.end}, post ${entry.post.start} to ${entry.post.end}`,
+      );
+      table.appendChild(caption);
+      const header = el("tr");
+      header.appendChild(el("th", "", ""));
+      header.appendChild(el("th", "", "Pre"));
+      header.appendChild(el("th", "", "Post"));
+      header.appendChild(el("th", "", "Post minus pre"));
+      table.appendChild(header);
+      for (const row of rows) {
+        const tr = el("tr");
+        tr.appendChild(el("td", "", row.label));
+        const pre = row.read(entry.pre);
+        const post = row.read(entry.post);
+        tr.appendChild(el("td", "", show(pre, row.digits)));
+        tr.appendChild(el("td", "", show(post, row.digits)));
+        const diff = pre !== null && post !== null ? post - pre : null;
+        tr.appendChild(
+          el("td", "", diff === null ? "-" : `${diff > 0 ? "+" : ""}${diff.toFixed(row.digits)}`),
+        );
+        table.appendChild(tr);
+      }
+      wrap.appendChild(table);
+
+      for (const [name, window] of [
+        ["pre", entry.pre],
+        ["post", entry.post],
+      ] as const) {
+        if (window.observed < window.length) {
+          wrap.appendChild(
+            el(
+              "p",
+              "dc-hint",
+              `The ${name} window of ${entry.periodId} has climate for ${window.observed} of its ${window.length} days. NASA POWER runs a few days behind the present, and a window in the future has none.`,
+            ),
+          );
+        }
+      }
+    }
+    return wrap;
+  }
+
+  /**
+   * Fetches when the place or the years have changed, and only then.
+   *
+   * Called from render, so the state change that starts a request is deferred
+   * a tick: a synchronous patch here would rebuild the panel from inside the
+   * render that is building it.
+   */
+  private ensureClimate(): void {
+    const key = this.climateKeyNow();
+    if (!key || key === this.state.climateKey) return;
+    window.setTimeout(() => this.startClimate(false), 0);
+  }
+
+  private climateKeyNow(): string | null {
+    const bbox = this.aoiBbox();
+    if (!bbox) return null;
+    const { longitude, latitude } = centreOf(bbox);
+    const { start, end } = climateRange(this.state.periods);
+    return climateKey(longitude, latitude, start, end);
+  }
+
+  private async startClimate(force: boolean): Promise<void> {
+    const bbox = this.aoiBbox();
+    if (!bbox) return;
+    const key = this.climateKeyNow();
+    if (!key) return;
+    if (!force && key === this.state.climateKey) return;
+
+    this.climateAbort?.abort();
+    const abort = new AbortController();
+    this.climateAbort = abort;
+
+    const { longitude, latitude } = centreOf(bbox);
+    const { start, end } = climateRange(this.state.periods);
+    this.patch({
+      climateKey: key,
+      climateStatus: "loading",
+      climateError: null,
+    });
+    try {
+      const series = await fetchClimate(longitude, latitude, start, end, abort.signal);
+      if (abort.signal.aborted) return;
+      this.patch({ climate: series, climateStatus: "ready", climateError: null });
+    } catch (error) {
+      if (abort.signal.aborted) return;
+      this.patch({
+        climate: null,
+        climateStatus: "error",
+        climateError: describeClimateError(error),
+      });
+    }
   }
 
   private updatePeriod(index: number, patch: Partial<Period>): void {

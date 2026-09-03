@@ -16,6 +16,7 @@ import {
 import type { Look } from "./reference/wayback";
 import type { FireEvidence, IdsSummary } from "./reference/corroborate";
 import type { ManagementSummary } from "./reference/management";
+import type { ClimateSeries } from "./reference/climate";
 
 export type RunStatus =
   | "idle"
@@ -101,6 +102,21 @@ export interface State {
   corroboration: Corroboration | null;
   corroborationStatus: "idle" | "loading" | "ready" | "error";
   corroborationError: string | null;
+
+  /**
+   * Daily climate at the centre of the area of interest, for the years the
+   * reporting periods touch and the ten before them.
+   *
+   * Not persisted. It is one anonymous request of a few hundred kilobytes and
+   * is fetched again whenever the area or the years change. Never an input to
+   * the analysis: it exists so the windows are placed at matching points of
+   * the season, which is a judgement the operator makes before running.
+   */
+  climate: ClimateSeries | null;
+  climateStatus: "idle" | "loading" | "ready" | "error";
+  climateError: string | null;
+  /** The place and range the held series answers, so a re-render does not refetch. */
+  climateKey: string | null;
 }
 
 export interface Corroboration {
@@ -159,6 +175,11 @@ export function createState(): State {
     corroboration: null,
     corroborationStatus: "idle",
     corroborationError: null,
+
+    climate: null,
+    climateStatus: "idle",
+    climateError: null,
+    climateKey: null,
 
     runStartedAt: null,
     results: [],

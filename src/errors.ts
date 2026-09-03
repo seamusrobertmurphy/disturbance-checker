@@ -29,3 +29,25 @@ export function describeError(error: unknown): string {
 
   return message;
 }
+
+/**
+ * The climate service is a different host with a different failure story, so
+ * a blocked request must name it rather than the imagery catalogue.
+ */
+export function describeClimateError(error: unknown): string {
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return "The climate request was cancelled.";
+  }
+  const message =
+    error instanceof Error ? error.message : String(error ?? "Unknown error");
+  if (/failed to fetch|networkerror|load failed/i.test(message)) {
+    return "NASA POWER could not be reached. On a corporate network, power.larc.nasa.gov needs to be reachable over HTTPS.";
+  }
+  if (/\b429\b|too many requests/i.test(message)) {
+    return "NASA POWER is rate limiting this connection. Wait a minute and try again.";
+  }
+  if (/\b5\d\d\b/.test(message)) {
+    return `${message} This is a fault at NASA POWER rather than in the run parameters. Trying again shortly usually clears it.`;
+  }
+  return message;
+}

@@ -10,6 +10,11 @@ import { State, breaksDeviate } from "./state";
 import { EARTH_SEARCH_URL, S2_STAC_COLLECTION } from "./stac/search";
 import { CLOUD_MASKS } from "./raster/mask";
 import { GRID_RESOLUTION } from "./raster/grid";
+import {
+  POWER_ATTRIBUTION,
+  periodClimates,
+  type WindowClimate,
+} from "./reference/climate";
 
 function describeAoi(state: State): string {
   if (!state.aoi) return "not set";
@@ -130,6 +135,28 @@ export function buildManifest(state: State, runAt: Date): string {
       }
       lines.push("");
     }
+  }
+
+  const climate = state.climate;
+  if (climate) {
+    lines.push("--- Season at the site ---");
+    lines.push(`  Source        ${POWER_ATTRIBUTION}`);
+    lines.push(
+      `  Read at       ${climate.latitude.toFixed(3)}, ${climate.longitude.toFixed(3)}, ${climate.start} to ${climate.end}, half-degree grid cell`,
+    );
+    const show = (value: number | null, digits: number): string =>
+      value === null ? "-" : value.toFixed(digits);
+    for (const entry of periodClimates(climate, state.periods)) {
+      const line = (label: string, w: WindowClimate): string =>
+        `  ${label.padEnd(14)}${w.start} to ${w.end}: mean ${show(w.tMean, 1)} C, sun ${show(w.sun, 1)} MJ/m2/day, rain ${show(w.rain, 0)} mm, snow ${w.snowDays} of ${w.length} days${w.observed < w.length ? ` (${w.observed} days observed)` : ""}`;
+      lines.push(`  ${entry.periodId}`);
+      lines.push(line("  Pre", entry.pre));
+      lines.push(line("  Post", entry.post));
+    }
+    lines.push(
+      "  Note          the climate is context for placing the windows and is not an input to the analysis",
+    );
+    lines.push("");
   }
 
   const corroboration = state.corroboration;

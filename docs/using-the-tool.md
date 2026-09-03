@@ -73,6 +73,28 @@ your pre and post windows cover different parts of the year.
 Set the years to match the reporting period under verification. Pre is the
 start, post is the end.
 
+**Season at the site** draws under the dates once an area of interest is set.
+It is the daily climate at the centre of the area, read from NASA POWER, with
+one line per reporting-period year over a grey ten-year mean and the pre and
+post windows shaded. Four small charts, one each for air temperature, sunlight,
+rain over the previous four weeks and, where any fell, snow depth. Hover a
+chart to read the values on a date.
+
+The charts answer one question, whether the two composites were taken at the
+same point of the season. Matching calendar dates is the first rule, and the
+shaded bands show at once when the pre and post windows sit on different parts
+of the year. The second rule is that the season ran on time in both years. A
+coloured line above the grey mean in spring is an early year, so leaf-out was
+further on than the date says, and a line below it is a late one. A window
+with snow on the ground in one year and bare ground in the other is not a
+matched pair whatever the dates say. When the years disagree, move the window
+a week or two so the two lines meet, then run.
+
+The table under the charts gives the mean temperature, sunlight, total rain and
+snow days inside each window, pre against post, and the same numbers go into
+the manifest in section 8 so a finding can quote them. Nothing here is an input
+to the analysis. It is context for a decision the tool leaves to you.
+
 **Maximum scene cloud cover** discards whole scenes that are cloudier than the
 threshold before any per-pixel masking runs. Leave it at 30. Drop it to 20 in
 the Pacific Northwest or coastal Alaska. Only raise it if the run comes back

@@ -266,6 +266,42 @@ observed-pixel count all describe the same polygon. Even-odd rather than
 non-zero winding, so an inholding or an excluded wetland leaves its hole empty
 regardless of the order its rings were digitised in.
 
+## 11. Season at the site
+
+The pre-post delta measures disturbance only when the two composites were
+taken at the same point of the seasonal cycle of leaf greenness and sunlight.
+The SOP's rule for this is to match calendar dates, which assumes the season
+ran on time in both years. The season charts under the reporting periods test
+that assumption with data rather than leaving it to memory.
+
+The data is NASA POWER daily surface climate at the centre of the area of
+interest, six parameters: mean, maximum and minimum air temperature at two
+metres, corrected precipitation, all-sky shortwave irradiance at the surface,
+and snow depth. The request covers the years the reporting periods touch and
+the ten calendar years before the earliest of them, in one call. POWER's grid
+is half a degree of latitude by five eighths of a degree of longitude, about
+fifty kilometres, so the values describe the district rather than the plot.
+Missing days, and the few days POWER runs behind the present, arrive as its
+fill value and are treated as absent rather than as zero.
+
+Temperature, sunlight and snow depth are drawn as a centred seven-day mean,
+and rain as the total over the previous twenty-eight days, because greenness
+follows the water that has arrived recently rather than the rain on the day.
+A moving window with fewer than half its days present is left blank so a gap
+in the record shows as a gap. Every year is placed on one January to December
+axis by month and day, on a leap-year calendar so 1 March always lands on the
+same slot, with the reporting-period years in colour over the mean of every
+fetched year in grey. The pre and post windows are shaded by their month-day
+span, so two windows on matching dates shade one band and mismatched windows
+shade two.
+
+For each period the mean temperature, mean sunlight, total rain and count of
+snow-covered days inside the pre window and the post window are tabulated with
+their difference, and written to the manifest. No threshold is applied to the
+difference. What counts as a large gap depends on the forest, and the number
+is there to be read against the curves and quoted in a finding, not to trigger
+a warning the tool cannot justify.
+
 ## Constants
 
 | Constant | Value | Where |
