@@ -353,9 +353,46 @@ assert.equal(
   `vendor/sen2sr-model.json does not record ${SHARP_MODEL} as deterministic, and a backdrop that changes between runs cannot be reconstructed from the manifest`,
 );
 
+// The graph, through the runtime the browser will actually use.
+//
+// Four of its operators, ConvTranspose, DepthToSpace, Pad and ConstantOfShape,
+// appear in neither cloud model, so until this ran nothing in the repository
+// showed that ONNX Runtime Web implements them. A missing kernel fails at
+// session creation with "no available backend found", in a browser, in front of
+// whoever asked to sharpen a view. It costs a quarter of a second to find out
+// here instead. WebGPU cannot be reached from Node, so this exercises the
+// WebAssembly path, which is the fallback every machine without a usable
+// adapter takes anyway.
+const ort = await import("onnxruntime-web");
+ort.env.wasm.numThreads = 1;
+const sharpSession = await ort.InferenceSession.create(
+  new Uint8Array(readFileSync(join(vendor, `${SHARP_MODEL}.onnx`))),
+  { executionProviders: ["wasm"] },
+);
+assert.deepEqual(
+  sharpSession.inputNames,
+  ["lr"],
+  `${SHARP_MODEL} does not take the input name src/raster/sen2sr.ts feeds it`,
+);
+const SHARP_TILE = 128;
+const probe = new Float32Array(4 * SHARP_TILE * SHARP_TILE).fill(0.2);
+const sharpOut = await sharpSession.run({
+  lr: new ort.Tensor("float32", probe, [1, 4, SHARP_TILE, SHARP_TILE]),
+});
+const sharpTensor = Object.values(sharpOut)[0];
+assert.deepEqual(
+  [...sharpTensor.dims],
+  [1, 4, SHARP_TILE * 4, SHARP_TILE * 4],
+  `${SHARP_MODEL} did not return four times the input on each side`,
+);
+assert.ok(
+  sharpTensor.data.every(Number.isFinite),
+  `${SHARP_MODEL} returned a value that is not finite, which would paint as a hole`,
+);
+
 console.log("smoke test passed");
 console.log(`  guides   ${guides.length}, ${crossLinks} cross-links resolved`);
 console.log(`  model    2 files, ${(modelBytes / 1048576).toFixed(0)} MB, both verified against torch`);
-console.log(`  sharpen  ${(sharpSize / 1024).toFixed(0)} kB, verified against the model ESA ships`);
+console.log(`  sharpen  ${(sharpSize / 1024).toFixed(0)} kB, verified against the model ESA ships and run under onnxruntime-web`);
 console.log(`  bundle   ${(readFileSync(join(root, "dist/index.js")).length / 1024).toFixed(0)} kB`);
 console.log(`  plugin   ${plugin.id} v${plugin.version}`);

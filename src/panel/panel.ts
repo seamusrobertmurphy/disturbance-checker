@@ -1,4 +1,10 @@
-import { CLASS_LABELS, CLASS_PALETTE, DELTAS, DeltaId } from "../defaults";
+import {
+  ANALYSIS_SCALE,
+  CLASS_LABELS,
+  CLASS_PALETTE,
+  DELTAS,
+  DeltaId,
+} from "../defaults";
 import {
   Diagnostic,
   analyseHistogram,
@@ -69,6 +75,11 @@ import {
 import { buildManifest } from "../manifest";
 import { MapLayerManager } from "../map/layers";
 import {
+  SHARP_SCALE,
+  sharpenView,
+  sharpenability,
+} from "../analysis/sharpen";
+import {
   ACCEPTED_EXTENSIONS,
   ImportedVector,
   importVectorFile,
@@ -119,6 +130,16 @@ export class DisturbancePanel {
   private readonly layers: MapLayerManager;
   /** The climate request in flight, so a change of area cancels it. */
   private climateAbort: AbortController | null = null;
+
+  /**
+   * The sharpen in flight, and what to say about it.
+   *
+   * Held outside state for the same reason the LANDFIRE legend is: it describes
+   * a picture on the map, not a parameter of the run, and it must not be
+   * persisted, because a backdrop over one view means nothing over another.
+   */
+  private sharpenAbort: AbortController | null = null;
+  private sharpenStatus = "";
 
   constructor(
     private readonly app: GeoLibreAppAPI,
@@ -1512,10 +1533,12 @@ export class DisturbancePanel {
   /**
    * Two independent visual checks on the same screen.
    *
-   * The first is the tool's own before-and-after true colour, at 10 m, built
-   * from the same masked observations the indices were built from. It answers
-   * whether the composite that produced the number looks like what the number
-   * claims.
+   * The first is the tool's own before-and-after true colour, on the 20 m
+   * working grid, built from the same masked observations the indices were
+   * built from. It answers whether the composite that produced the number looks
+   * like what the number claims. It said 10 m until 2026-09-06, which was the
+   * resolution of the bands rather than of the grid they were read onto, and
+   * the difference matters beside a backdrop that really is finer.
    *
    * The second is Esri's dated high-resolution archive, frequently sub-metre.
    * It answers what the ground actually is: a cutblock, a road, a landing, a
@@ -1531,7 +1554,9 @@ export class DisturbancePanel {
       return body;
     }
 
-    body.appendChild(el("div", "dc-subhead", "Before and after, 10 m"));
+    body.appendChild(
+      el("div", "dc-subhead", `Before and after, ${this.state.results[0]?.grid.resolution ?? ANALYSIS_SCALE} m`),
+    );
 
     const blend = el("input", "dc-range");
     blend.type = "range";
@@ -1570,6 +1595,8 @@ export class DisturbancePanel {
         "Blinking between two dates over fixed ground is how change is found by eye. A clearing jumps; noise does not.",
       ),
     );
+
+    body.appendChild(this.renderSharpen());
 
     body.appendChild(el("div", "dc-subhead", "High-resolution archive"));
 
@@ -2256,6 +2283,159 @@ export class DisturbancePanel {
     body.appendChild(row);
 
     return body;
+  }
+
+  /**
+   * The map's current view, as a plain box.
+   *
+   * `useMapBounds` reads the same thing to set an area of interest and rounds
+   * it to five decimals for display. This one does not round, because the box
+   * becomes a grid origin and a rounded corner would shift every pixel.
+   */
+  private mapBounds():
+    | { west: number; south: number; east: number; north: number }
+    | null {
+    const map = this.app.getMap?.() as
+      | {
+          getBounds?: () => {
+            getWest(): number;
+            getSouth(): number;
+            getEast(): number;
+            getNorth(): number;
+          };
+        }
+      | null
+      | undefined;
+    const bounds = map?.getBounds?.();
+    if (!bounds) return null;
+    return {
+      west: bounds.getWest(),
+      south: bounds.getSouth(),
+      east: bounds.getEast(),
+      north: bounds.getNorth(),
+    };
+  }
+
+  /**
+   * Ask the model to redraw the current view at 2.5 metres.
+   *
+   * This is the answer to a question the analysis layers cannot answer. They
+   * are painted on the 20 metre working grid, which is the SOP's scale and the
+   * native resolution of B11, B12 and SCL, so zooming in magnifies 20 metre
+   * pixels and never shows more than 20 metres of ground. This reads the four
+   * bands recorded at 10 metres over the view alone and runs SEN2SRLite over
+   * them, which is one forward pass of a 572,336 parameter network and returns
+   * the same picture every time it is asked.
+   *
+   * It is a picture and nothing else. No index, no class area and no histogram
+   * reads it, and a finding does not cite it. What it is for is telling a
+   * cutblock from a road from a windthrow gap from a shadow, which is the one
+   * thing a High severity patch on a 20 metre grid cannot tell you.
+   */
+  private renderSharpen(): HTMLElement {
+    const wrap = el("div", "dc-stack");
+    wrap.appendChild(el("div", "dc-subhead", `Sharpened backdrop, ${SHARP_SCALE} m`));
+
+    const result = this.state.results[0];
+    if (!result) return wrap;
+
+    const bounds = this.mapBounds();
+    if (!bounds) {
+      wrap.appendChild(
+        el("p", "dc-hint", "The map view could not be read, so there is nothing to sharpen."),
+      );
+      return wrap;
+    }
+
+    const check = sharpenability(bounds, result.grid);
+    if (!check.ok) {
+      wrap.appendChild(el("p", "dc-hint", check.reason));
+      return wrap;
+    }
+
+    for (const period of this.state.results) {
+      const row = el("div", "dc-row");
+      const prefix = this.state.results.length > 1 ? `${period.periodId} ` : "";
+      row.appendChild(
+        button(`${prefix}Pre`, () => void this.sharpen(period, "pre"), "secondary"),
+      );
+      row.appendChild(
+        button(`${prefix}Post`, () => void this.sharpen(period, "post"), "secondary"),
+      );
+      wrap.appendChild(row);
+    }
+
+    const status = el("p", "dc-hint dc-sharpen-status", this.sharpenStatus);
+    wrap.appendChild(status);
+
+    wrap.appendChild(
+      el(
+        "p",
+        "dc-hint",
+        `Reads the four 10 m bands over this view only and redraws them at ${SHARP_SCALE} m, ${check.tiles} model tiles. The detail is a trained guess, not a measurement, so use it to tell a cutblock from a road from a shadow and never as evidence of an area. Zooming or panning does not update it: sharpen again for the new view.`,
+      ),
+    );
+
+    return wrap;
+  }
+
+  private setSharpenStatus(message: string): void {
+    this.sharpenStatus = message;
+    const node = this.container?.querySelector(".dc-sharpen-status");
+    if (node) node.textContent = message;
+  }
+
+  private async sharpen(
+    result: PeriodResult,
+    which: "pre" | "post",
+  ): Promise<void> {
+    const bounds = this.mapBounds();
+    if (!bounds) {
+      this.setSharpenStatus("The map view could not be read.");
+      return;
+    }
+
+    // One at a time. Two sharpens over different views would race to paint the
+    // same layer key and the loser would still be reading imagery.
+    this.sharpenAbort?.abort();
+    const abort = new AbortController();
+    this.sharpenAbort = abort;
+
+    try {
+      const sharp = await sharpenView({
+        bounds,
+        grid: result.grid,
+        observations:
+          which === "pre" ? result.preObservations : result.postObservations,
+        maskId: this.state.maskId,
+        maskOptions: this.state.maskOptions,
+        onProgress: (message) => this.setSharpenStatus(message),
+        signal: abort.signal,
+      });
+
+      // Under the analysis layers, because it is a backdrop. The key sits in
+      // the run's own prefix so the next run clears it: a sharpened view of one
+      // set of dates must not survive a change of dates.
+      this.layers.addRaster({
+        key: `r-sharp-${result.periodId}-${which}`.replace(/[^a-z0-9-]+/gi, "-").toLowerCase(),
+        name: `${result.periodId} ${which === "pre" ? "Pre" : "Post"} sharpened ${SHARP_SCALE} m`,
+        dataUrl: sharp.dataUrl,
+        coordinates: sharp.coordinates,
+        visible: true,
+      });
+
+      const painted = sharp.paintedScale.toFixed(1);
+      this.setSharpenStatus(
+        `Drawn at ${painted} m per pixel from ${sharp.tiles} tiles on ${sharp.provider}. Zoom or pan and sharpen again to move it.`,
+      );
+    } catch (error) {
+      if (abort.signal.aborted) return;
+      this.setSharpenStatus(
+        error instanceof Error ? error.message : "The sharpen failed.",
+      );
+    } finally {
+      if (this.sharpenAbort === abort) this.sharpenAbort = null;
+    }
   }
 
   private notice(
