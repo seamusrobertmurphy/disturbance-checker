@@ -42,3 +42,9 @@
 2026-09-06: `torch.onnx.export` with `dynamo=True`, the default in torch 2.13, segfaults this interpreter with EXC_BAD_ACCESS at a null address inside `direct_copy_kernel` in `libtorch_cpu.dylib` during decomposition, on a 3.3 GB process so not memory pressure. It matters because `dynamo=False` exports the same model without complaint and every export here must pass it.
 
 2026-09-06: `Reference_RSWIR_x2` sharpens B05, B06, B07, B8A, B11 and B12 from 20 m to 10 m in 12 ms per patch from a 201 KB ONNX file. It matters because B8A, B11 and B12 are exactly the bands NDMI and NBR need and LDSR-S2 could not touch, so it is the only route to moving `ANALYSIS_SCALE` off 20 m, and it needs B05, B06 and B07 added to `REQUIRED_ASSETS` in `src/stac/search.ts`.
+
+2026-09-06: the tool's before-and-after true-colour layers are on the 20 m working grid, not 10 m, because `runPeriod` calls `gridForBounds(epsg, bounds)` with no resolution and the default is `ANALYSIS_SCALE`. It matters because the panel's own subhead claimed 10 m until this date, and a layer painted at 20 m cannot show more than 20 m however far the map is zoomed.
+
+2026-09-06: ONNX Runtime Web accepts the SEN2SRLite graph on the WebAssembly backend and ran one 128 px tile in 243 ms in Node, so `ConvTranspose`, `DepthToSpace`, `Pad` and `ConstantOfShape` are all implemented despite appearing in neither cloud model. It matters because a missing kernel fails only at session creation in a browser, and `scripts/smoke-test.mjs` now runs this check on every build.
+
+2026-09-06: `known-good-2026-09-06` tags f278ff8, the commit deployed before the super-resolution work, and it is pushed. It matters because `deploy.yml` publishes on any push to main, so that tag plus `git revert --no-edit -m 1 HEAD && git push` is the whole rollback.
