@@ -36,6 +36,8 @@ export const ASSET_BANDS = {
   swir16: "B11",
   swir22: "B12",
   scl: "SCL",
+  aot: "AOT",
+  wvp: "WVP",
 } as const;
 
 export type AssetKey = keyof typeof ASSET_BANDS;
@@ -53,6 +55,16 @@ export const REQUIRED_ASSETS: AssetKey[] = [
   "swir22",
   "scl",
 ];
+
+/**
+ * Assets taken when the scene has them and skipped when it does not.
+ *
+ * Sen2Cor's own aerosol optical thickness and water vapour maps. They are
+ * reported to the operator and never masked on, for reasons written where the
+ * report is built. Kept out of `REQUIRED_ASSETS` because a scene missing one
+ * of those is discarded, and no overpass should be lost over a diagnostic.
+ */
+export const OPTIONAL_ASSETS: AssetKey[] = ["aot", "wvp"];
 
 export interface StacScene {
   id: string;
@@ -180,6 +192,10 @@ function parseFeature(feature: StacFeature): StacScene | null {
     // browser. Only the https hrefs on sentinel-cogs are usable.
     if (!href || !href.startsWith("https://")) return null;
     hrefs[key] = href;
+  }
+  for (const key of OPTIONAL_ASSETS) {
+    const href = feature.assets?.[key]?.href;
+    if (href && href.startsWith("https://")) hrefs[key] = href;
   }
 
   const grid = String(props["grid:code"] ?? "");

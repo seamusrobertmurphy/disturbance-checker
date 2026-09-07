@@ -64,6 +64,25 @@ const MAX_SOURCE = MAX_OUTPUT / (SOURCE_SCALE / SHARP_SCALE);
 /** Blocks of the fetch, matching the run's own. */
 const BLOCK = 512;
 
+/**
+ * The backdrop's own stretch, applied after each band is put on 0 to 1 by its
+ * own percentiles. The gamma is the SOP's; only where black and white sit has
+ * moved. This is a picture for interpretation and feeds no number, which is the
+ * whole reason it may be stretched to suit the eye when the analysis layers
+ * may not.
+ */
+const BACKDROP_VIS = { min: 0, max: 1, gamma: RGB_VIS.gamma };
+
+/** Ends of each band's own range, as percentiles of the view. */
+const LOW_PERCENTILE = 0.02;
+const HIGH_PERCENTILE = 0.98;
+
+/** Reflectance the two ends must differ by before the stretch is trusted. */
+const MIN_SPAN = 0.01;
+
+/** Roughly how many pixels a percentile is read from. */
+const SAMPLE_TARGET = 200_000;
+
 export interface SharpenRequest {
   /** The map's current view, or any box the operator chose. */
   bounds: { west: number; south: number; east: number; north: number };
@@ -92,6 +111,14 @@ export interface SharpenResult {
   /** Pixels the model wrote, before the warp to lon/lat. */
   width: number;
   height: number;
+  /**
+   * Reflectance put at black and at white, red then green then blue.
+   *
+   * Reported because the backdrop is stretched to its own view rather than to
+   * the SOP's fixed pair, so two backdrops of neighbouring views are not
+   * comparable by brightness and an operator has to be able to see that.
+   */
+  stretch: Array<{ min: number; max: number }>;
 }
 
 /**
@@ -199,16 +226,69 @@ function scatter(
  * model carried alongside its output is what decides transparency here.
  */
 function paintSharp(image: SharpImage, warp: Warp) {
-  const stretched: Float32Array[] = [image.red, image.green, image.blue].map(
-    (band) => {
-      const copy = new Float32Array(band.length);
-      for (let i = 0; i < band.length; i += 1) {
-        copy[i] = image.valid[i] ? band[i] : Number.NaN;
-      }
-      return copy;
-    },
+  const bands = [image.red, image.green, image.blue].map((band) => {
+    const copy = new Float32Array(band.length);
+    for (let i = 0; i < band.length; i += 1) {
+      copy[i] = image.valid[i] ? band[i] : Number.NaN;
+    }
+    return copy;
+  });
+  const limits = bands.map(percentileLimits);
+  const normalised = bands.map((band, i) => normalise(band, limits[i]));
+  const painted = paintRgb(
+    normalised[0],
+    normalised[1],
+    normalised[2],
+    BACKDROP_VIS,
+    warp,
   );
-  return paintRgb(stretched[0], stretched[1], stretched[2], RGB_VIS, warp);
+  return { painted, limits };
+}
+
+/**
+ * Where to put black and white for this view, per band.
+ *
+ * Read from the pixels rather than fixed, because a fixed pair cannot suit both
+ * a conifer valley and a snowfield, and the SOP's pair suits neither well on a
+ * zoomed view. Measured on 2026-09-06 over a forest and farmland view near
+ * Vanderhoof, the SOP's floor of 0.02 drove 26.7 per cent of red and 16.5 per
+ * cent of blue to pure black while its ceiling of 0.25 was never approached,
+ * the 99th percentile being 0.159 red, 0.139 green and 0.112 blue, so the
+ * picture was dark and cast green.
+ *
+ * Every pixel is sampled through a stride rather than sorted whole, because a
+ * 4,096 pixel view is 16.8 million values a band and the percentile does not
+ * need that precision.
+ */
+function percentileLimits(band: Float32Array): { min: number; max: number } {
+  const stride = Math.max(1, Math.floor(band.length / SAMPLE_TARGET));
+  const sample: number[] = [];
+  for (let i = 0; i < band.length; i += stride) {
+    if (Number.isFinite(band[i])) sample.push(band[i]);
+  }
+  if (sample.length < 32) return { min: RGB_VIS.min, max: RGB_VIS.max };
+  sample.sort((a, b) => a - b);
+  const at = (p: number) =>
+    sample[Math.min(sample.length - 1, Math.floor(p * sample.length))];
+  const min = at(LOW_PERCENTILE);
+  const max = at(HIGH_PERCENTILE);
+  // A view of one flat surface, a lake or a snowfield, can put both ends on
+  // almost the same number, and dividing by that span turns sensor noise into
+  // a full-contrast image. Fall back to the SOP's span when that happens.
+  if (!(max - min > MIN_SPAN)) return { min, max: min + MIN_SPAN };
+  return { min, max };
+}
+
+function normalise(
+  band: Float32Array,
+  limits: { min: number; max: number },
+): Float32Array {
+  const span = limits.max - limits.min;
+  const out = new Float32Array(band.length);
+  for (let i = 0; i < band.length; i += 1) {
+    out[i] = Number.isNaN(band[i]) ? Number.NaN : (band[i] - limits.min) / span;
+  }
+  return out;
 }
 
 /**
@@ -257,7 +337,7 @@ export async function sharpenView(
 
   report("drawing the sharpened backdrop", 0.97);
   const warp = buildWarp(target, MAX_OUTPUT);
-  const painted = paintSharp(sharp, warp);
+  const { painted, limits } = paintSharp(sharp, warp);
 
   const paintedScale =
     (target.width * SHARP_SCALE) / Math.max(1, warp.width);
@@ -270,5 +350,9 @@ export async function sharpenView(
     provider,
     width: sharp.width,
     height: sharp.height,
+    stretch: limits.map((band) => ({
+      min: +band.min.toFixed(3),
+      max: +band.max.toFixed(3),
+    })),
   };
 }

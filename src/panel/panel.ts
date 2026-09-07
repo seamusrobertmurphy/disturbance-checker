@@ -2487,8 +2487,11 @@ export class DisturbancePanel {
       });
 
       const painted = sharp.paintedScale.toFixed(1);
+      const ends = sharp.stretch
+        .map((band) => `${band.min.toFixed(3)} to ${band.max.toFixed(3)}`)
+        .join(", ");
       this.setSharpenStatus(
-        `${which_} drawn at ${painted} m per pixel from ${sharp.tiles} tiles on ${sharp.provider}. Zoom or pan and sharpen again to move it.`,
+        `${which_} drawn at ${painted} m per pixel from ${sharp.tiles} tiles on ${sharp.provider}. Black to white spans reflectance ${ends} for red, green and blue, read from this view, so brightness is not comparable with another view. Zoom or pan and sharpen again to move it.`,
         1,
         false,
       );

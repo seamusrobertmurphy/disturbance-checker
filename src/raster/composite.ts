@@ -51,6 +51,31 @@ export const INDEX_BANDS: AssetKey[] = [
  */
 export const RGB_EXTRA_BANDS: AssetKey[] = ["blue", "green"];
 
+/**
+ * Sen2Cor's aerosol optical thickness and water vapour maps.
+ *
+ * Read for the same handful of clearest observations as blue and green, and
+ * for the same reason: they are reported, not measured against, so reading
+ * them for every overpass would spend a quarter of a run's network traffic on
+ * a line of text.
+ *
+ * They are never used to reject a pixel. Both are outputs of the atmospheric
+ * correction rather than independent observations of the sky, so a threshold
+ * on them screens the correction's own working. More decisively, where a scene
+ * carries no dense dark vegetation the aerosol retrieval cannot run at all and
+ * Sen2Cor writes a constant instead, a default visibility of 40 km and an
+ * optical thickness near 0.2, with nothing in the delivered layer to say which
+ * pixels are measured and which are that default.
+ */
+export const ATMOSPHERE_BANDS: AssetKey[] = ["aot", "wvp"];
+
+/**
+ * Both are written as thousandths of their unit, not as reflectance, so they
+ * do not go through `SCALE_DIVISOR`. Aerosol optical thickness is dimensionless
+ * and water vapour is in centimetres of precipitable water.
+ */
+export const ATMOSPHERE_DIVISOR = 1000;
+
 /** Every reflectance band the reader may be asked for. */
 export const REFLECTANCE_BANDS: AssetKey[] = [
   ...INDEX_BANDS,
@@ -72,6 +97,11 @@ export interface CompositeBlock {
   /** Scaled surface reflectance for the index bands, NaN where nothing
    * survived. */
   bands: Record<AssetKey, Float32Array>;
+  /**
+   * Running total and count of the atmosphere maps over this block's surviving
+   * pixels, so a caller can take one mean across every block of a window.
+   */
+  atmosphere: Record<AssetKey, { sum: number; count: number }>;
   /**
    * True colour, composited over the clearest few observations only.
    *
@@ -206,8 +236,29 @@ export async function buildComposite(
   const subset = input.rgbSubset.filter((index) => blocks[index]?.blue);
   const rgbFrom = subset.length > 0 ? subset : all.filter((i) => blocks[i]?.blue);
 
+  // The atmosphere maps are summed, not composited, because nothing paints
+  // them. One mean over the block's valid pixels is the whole report, so
+  // carrying a full raster of them to the caller would be waste.
+  const atmosphere = {} as Record<AssetKey, { sum: number; count: number }>;
+  for (const band of ATMOSPHERE_BANDS) {
+    const from = all.filter((index) => blocks[index]?.[band]);
+    let sum = 0;
+    let count = 0;
+    for (let i = 0; i < length; i += 1) {
+      for (const s of from) {
+        if (!valid[s][i]) continue;
+        const value = blocks[s][band][i];
+        if (value === NODATA) continue;
+        sum += value / ATMOSPHERE_DIVISOR;
+        count += 1;
+      }
+    }
+    atmosphere[band] = { sum, count };
+  }
+
   return {
     bands,
+    atmosphere,
     rgb: {
       red: medianOver("red", rgbFrom),
       green: medianOver("green", rgbFrom),

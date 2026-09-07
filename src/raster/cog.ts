@@ -188,11 +188,15 @@ export async function readSceneBlock(
   block: GridBlock,
   options: ReadOptions = {},
 ): Promise<SceneBlock> {
-  const bands = await pooled(assets, READ_CONCURRENCY, (asset) =>
+  // An asset with no href is one of the optional ones this scene does not
+  // publish. Skipping it leaves the key absent, which every consumer already
+  // handles, rather than failing the whole observation over a diagnostic.
+  const wanted = assets.filter((asset) => scene.hrefs[asset]);
+  const bands = await pooled(wanted, READ_CONCURRENCY, (asset) =>
     readAssetBlock(cache, scene.hrefs[asset], block, options),
   );
   const out = {} as SceneBlock;
-  assets.forEach((asset, index) => {
+  wanted.forEach((asset, index) => {
     out[asset] = bands[index];
   });
   return out;
@@ -227,9 +231,11 @@ export async function readObservationBlock(
 
   const merged = {} as SceneBlock;
   for (const asset of assets) {
+    const held = parts.filter((part) => part[asset]);
+    if (held.length === 0) continue;
     const out = new Float32Array(block.width * block.height);
     for (let i = 0; i < out.length; i += 1) {
-      for (const part of parts) {
+      for (const part of held) {
         const value = part[asset][i];
         if (value !== NODATA) {
           out[i] = value;

@@ -92,6 +92,12 @@ export function buildManifest(state: State, runAt: Date): string {
         `  Thin coverage ${result.thinPixels} pixel(s) had fewer clear looks than the stability floor`,
       );
     }
+    if (result.atmosphere) {
+      const air = result.atmosphere;
+      lines.push(
+        `  Atmosphere    aerosol optical thickness ${air.preAot.toFixed(2)} pre, ${air.postAot.toFixed(2)} post; water vapour ${air.preWvp.toFixed(2)} cm pre, ${air.postWvp.toFixed(2)} cm post (Sen2Cor maps, reported only, no pixel masked on them)`,
+      );
+    }
     for (const warning of result.warnings) {
       lines.push(`  WARNING       ${warning}`);
     }

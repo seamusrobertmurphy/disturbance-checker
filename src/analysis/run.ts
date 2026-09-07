@@ -19,6 +19,7 @@ import {
   type SceneBlock,
 } from "../raster/cog";
 import {
+  ATMOSPHERE_BANDS,
   INDEX_BANDS,
   RGB_EXTRA_BANDS,
   RGB_OBSERVATION_COUNT,
@@ -169,7 +170,26 @@ export interface PeriodResult {
    * difference between a run that took four minutes and one that took forty.
    */
   maskDescription: string;
+  /**
+   * Mean aerosol optical thickness and water vapour over each window's
+   * surviving pixels, or null where the scenes published neither.
+   *
+   * Reported, never acted on. The delta is a subtraction of one window from
+   * the other, so what can manufacture change is not haze in absolute terms
+   * but a difference in haze between the two windows, which is why both are
+   * carried and compared rather than either being tested against a threshold.
+   */
+  atmosphere: AtmosphereReport | null;
   warnings: string[];
+}
+
+export interface AtmosphereReport {
+  /** Dimensionless aerosol optical thickness at 550 nm, per window. */
+  preAot: number;
+  postAot: number;
+  /** Centimetres of precipitable water, per window. */
+  preWvp: number;
+  postWvp: number;
 }
 
 /**
@@ -224,8 +244,11 @@ export async function compositeForBlock(
     {
       signal,
       // Blue and green ride along only for the handful of observations that
-      // will paint the true-colour layers.
-      extraAssets: (index) => (wanted.has(index) ? RGB_EXTRA_BANDS : []),
+      // will paint the true-colour layers, and the two atmosphere maps ride
+      // with them, since one mean per window needs no more overpasses than a
+      // picture does.
+      extraAssets: (index) =>
+        wanted.has(index) ? [...RGB_EXTRA_BANDS, ...ATMOSPHERE_BANDS] : [],
     },
   );
   return buildComposite({
@@ -378,6 +401,14 @@ export async function runPeriod(
   let observedPixels = 0;
   let thinPixels = 0;
 
+  // One running total per window, so the atmosphere report is a mean over
+  // every surviving pixel of the window rather than of whichever block was
+  // read last.
+  const atmosphere = {
+    pre: { aot: { sum: 0, count: 0 }, wvp: { sum: 0, count: 0 } },
+    post: { aot: { sum: 0, count: 0 }, wvp: { sum: 0, count: 0 } },
+  };
+
   for (let b = 0; b < blocks.length; b += 1) {
     const block = blocks[b];
     const fraction = b / blocks.length;
@@ -390,6 +421,19 @@ export async function runPeriod(
       compositeForBlock(cache, pre.observations, assets, block, mask, params.maskOptions, signal),
       compositeForBlock(cache, post.observations, assets, block, mask, params.maskOptions, signal),
     ]);
+
+    for (const band of ATMOSPHERE_BANDS) {
+      const key = band as "aot" | "wvp";
+      for (const [window, composite] of [
+        ["pre", preComposite],
+        ["post", postComposite],
+      ] as const) {
+        const held = composite.atmosphere[band];
+        if (!held) continue;
+        atmosphere[window][key].sum += held.sum;
+        atmosphere[window][key].count += held.count;
+      }
+    }
 
     const deltas = computeDeltas(preComposite, postComposite);
 
@@ -507,8 +551,48 @@ export async function runPeriod(
     observedPixels,
     thinPixels,
     maskDescription,
+    atmosphere: atmosphereReport(atmosphere, warnings),
     warnings,
   };
+}
+
+/**
+ * Turn the running totals into one line the operator can read.
+ *
+ * A warning is raised on the difference between the windows, not on either
+ * value, because a delta subtracts one from the other and only a difference in
+ * atmosphere between them can move a number. The 0.1 threshold is this tool's
+ * own reporting choice, not a figure from the SOP or from ESA, and it exists so
+ * that a verifier looking at a marginal result knows to check the imagery
+ * rather than so that anything is rejected automatically.
+ */
+const AOT_DIFFERENCE_WARNING = 0.1;
+
+function atmosphereReport(
+  totals: {
+    pre: Record<"aot" | "wvp", { sum: number; count: number }>;
+    post: Record<"aot" | "wvp", { sum: number; count: number }>;
+  },
+  warnings: string[],
+): AtmosphereReport | null {
+  const mean = (held: { sum: number; count: number }) =>
+    held.count > 0 ? held.sum / held.count : Number.NaN;
+  const report: AtmosphereReport = {
+    preAot: mean(totals.pre.aot),
+    postAot: mean(totals.post.aot),
+    preWvp: mean(totals.pre.wvp),
+    postWvp: mean(totals.post.wvp),
+  };
+  if (!Number.isFinite(report.preAot) || !Number.isFinite(report.postAot)) {
+    return null;
+  }
+  const difference = Math.abs(report.preAot - report.postAot);
+  if (difference >= AOT_DIFFERENCE_WARNING) {
+    warnings.push(
+      `Aerosol optical thickness averaged ${report.preAot.toFixed(2)} before and ${report.postAot.toFixed(2)} after, a difference of ${difference.toFixed(2)}. Sen2Cor corrected each window for its own atmosphere, so this is not a residual error, but a gap this size means the two composites were retrieved through visibly different air and a marginal delta is worth confirming against the imagery.`,
+    );
+  }
+  return report;
 }
 
 function allocateBands(total: number) {
