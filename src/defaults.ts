@@ -74,7 +74,7 @@ export interface DeltaSpec {
 
 // SOP Step 5 delta sign convention, and Step 6 default breaks. Overriding a
 // break is allowed only when the histogram supports it, and the deviation must
-// be documented. This tool records the justification in the run manifest.
+// be documented. This tool keeps the justification with the saved project.
 export const DELTAS: Record<DeltaId, DeltaSpec> = {
   dNDVI: {
     id: "dNDVI",

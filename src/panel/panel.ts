@@ -72,7 +72,6 @@ import {
   type Metric,
   type WindowClimate,
 } from "../reference/climate";
-import { buildManifest } from "../manifest";
 import { MapLayerManager } from "../map/layers";
 import {
   SHARP_SCALE,
@@ -98,6 +97,16 @@ import { renderHistogramPlot } from "./histogram-plot";
 import { mountClimographPanel, yearColour } from "./climograph-plot";
 
 const OPEN_SECTIONS_KEY = "tuvsud.disturbance.openSections";
+
+/**
+ * How long any one corroborating registry gets before it is given up on.
+ *
+ * The Forest Service activity layer answered a half-degree box in 35 seconds
+ * on 2026-09-07 and has no server-side paging, so the ceiling has to clear
+ * that by a wide margin. Without one a hung request left the section on
+ * "searching" with nothing to retry.
+ */
+const CORROBORATION_TIMEOUT = 90_000;
 
 const CONTEXT_META: Record<
   ContextRole,
@@ -282,9 +291,6 @@ export class DisturbancePanel {
         this.summariseCorroboration(),
         () => this.renderCorroboration(),
       ),
-    );
-    this.container.appendChild(
-      this.section("findings", "9", "Findings", "", () => this.renderFindings()),
     );
     this.container.appendChild(this.renderHelpFooter());
   }
@@ -477,7 +483,7 @@ export class DisturbancePanel {
       el(
         "p",
         "dc-hint",
-        "Thresholds can also be dragged directly on the histograms after a run. Any value moved off its default must carry a written justification, which is recorded in the run manifest.",
+        "Thresholds can also be dragged directly on the histograms after a run. Any value moved off its default must carry a written justification, which is saved with the project.",
       ),
     );
 
@@ -1922,6 +1928,16 @@ export class DisturbancePanel {
     const held = this.state.corroboration;
     if (!held) return body;
 
+    if (held.unavailable.length > 0) {
+      body.appendChild(
+        this.notice(
+          "warning",
+          "Not every registry answered",
+          `This search could not reach ${held.unavailable.join(" or ")}. Everything below comes from the sources that did answer, and an absence there is not evidence of absence on the ground. Search again before citing silence from a source that failed.`,
+        ),
+      );
+    }
+
     body.appendChild(
       el(
         "div",
@@ -2208,23 +2224,66 @@ export class DisturbancePanel {
     const years = yearsCovered(this.state.periods);
 
     this.patch({ corroborationStatus: "loading", corroborationError: null });
-    try {
-      const [ids, fires, management] = await Promise.all([
-        insectAndDisease(bbox, years),
-        fireEvidence(bbox, years),
-        managementRecord(bbox, years),
-      ]);
-      this.patch({
-        corroboration: { ids, fires, management, years, fetchedAt: Date.now() },
-        corroborationStatus: "ready",
-        corroborationError: null,
-      });
-    } catch (error) {
+
+    // Each registry is asked on its own clock and settled on its own.
+    //
+    // These are three unrelated services with three different operators, and
+    // the Forest Service activity layer is by far the slowest: a half-degree
+    // box took 35 seconds when this was measured on 2026-09-07. Gathering them
+    // with Promise.all meant one slow or broken registry threw away the
+    // answers the other two had already returned, which is the opposite of
+    // what a verifier needs. A source that fails is named instead.
+    const settled = await Promise.allSettled([
+      insectAndDisease(bbox, years, AbortSignal.timeout(CORROBORATION_TIMEOUT)),
+      fireEvidence(bbox, years, AbortSignal.timeout(CORROBORATION_TIMEOUT)),
+      managementRecord(bbox, years, AbortSignal.timeout(CORROBORATION_TIMEOUT)),
+    ]);
+    const [idsResult, firesResult, managementResult] = settled;
+
+    const unavailable: string[] = [];
+    if (idsResult.status === "rejected") {
+      unavailable.push("the aerial insect and disease survey");
+    }
+    if (firesResult.status === "rejected") unavailable.push("the fire registries");
+    if (managementResult.status === "rejected") {
+      unavailable.push("the Forest Service activity record");
+    }
+
+    if (unavailable.length === settled.length) {
+      const reasons = settled.flatMap((entry) =>
+        entry.status === "rejected" ? [entry.reason] : [],
+      );
       this.patch({
         corroborationStatus: "error",
-        corroborationError: describeError(error),
+        corroborationError: describeError(reasons[0]),
       });
+      return;
     }
+
+    this.patch({
+      corroboration: {
+        ids:
+          idsResult.status === "fulfilled"
+            ? idsResult.value
+            : { covered: false, groups: [], totalAcres: 0 },
+        fires:
+          firesResult.status === "fulfilled"
+            ? firesResult.value
+            : {
+                records: [],
+                perimeters: { type: "FeatureCollection", features: [] },
+                yearsUnassessed: [],
+                sources: [],
+              },
+        management:
+          managementResult.status === "fulfilled" ? managementResult.value : null,
+        years,
+        fetchedAt: Date.now(),
+        unavailable,
+      },
+      corroborationStatus: "ready",
+      corroborationError: null,
+    });
   }
 
   private showPerimeters(): void {
@@ -2238,53 +2297,6 @@ export class DisturbancePanel {
       labelField: null,
       color: "#d7301f",
     });
-  }
-
-  private renderFindings(): HTMLElement {
-    const body = el("div", "dc-stack");
-
-    if (this.state.results.length === 0) {
-      body.appendChild(
-        el("p", "dc-hint", "The run manifest becomes available after a check completes."),
-      );
-      return body;
-    }
-
-    const manifest = buildManifest(
-      this.state,
-      new Date(this.state.runStartedAt ?? Date.now()),
-    );
-
-    const preview = el("pre", "dc-manifest", manifest);
-    body.appendChild(preview);
-
-    const row = el("div", "dc-row");
-    row.appendChild(
-      button(
-        "Copy manifest",
-        () => {
-          void navigator.clipboard?.writeText(manifest);
-        },
-        "primary",
-      ),
-    );
-    row.appendChild(
-      button("Download as text", () => {
-        const blob = new Blob([manifest], { type: "text/plain" });
-        const url = URL.createObjectURL(blob);
-        const link = el("a");
-        link.href = url;
-        link.download = `disturbance-check-${new Date(this.state.runStartedAt ?? Date.now())
-          .toISOString()
-          .slice(0, 19)
-          .replace(/[:T]/g, "-")}.txt`;
-        link.click();
-        URL.revokeObjectURL(url);
-      }),
-    );
-    body.appendChild(row);
-
-    return body;
   }
 
   /**

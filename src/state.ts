@@ -126,6 +126,15 @@ export interface Corroboration {
   management: ManagementSummary | null;
   years: number[];
   fetchedAt: number;
+  /**
+   * Sources that were asked and did not answer, named.
+   *
+   * An empty result from a registry that failed reads exactly like an empty
+   * result from ground that was never damaged, and the two mean opposite
+   * things. A source that errored or timed out is listed here so silence is
+   * never read as evidence.
+   */
+  unavailable: string[];
 }
 
 function defaultPeriod(id: string, preYear: number, postYear: number): Period {

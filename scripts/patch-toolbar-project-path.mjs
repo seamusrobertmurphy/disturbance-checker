@@ -1,10 +1,10 @@
-// Replaces the project path in GeoLibre's top toolbar with a repository link.
+// Removes the project path from GeoLibre's top toolbar.
 //
 // GeoLibre prints the project path at the right end of its toolbar, and on a
-// GitHub Pages deploy that path is the deploy's own URL, so every screenshot
-// of the tool carries the author's personal GitHub address across the top. The
-// span is replaced by an anchor holding GitHub's mark, which says the same
-// thing to anyone who wants the source and nothing to anyone who does not.
+// GitHub Pages deploy that path is the deploy's own URL, so every screenshot of
+// the tool carried an account name and a repository address across the top. The
+// span is deleted outright. An earlier version replaced it with a link on
+// GitHub's mark, which still spelled the account out in the href.
 //
 // Verified against apps/geolibre-desktop/src/components/layout/TopToolbar.tsx
 // at GeoLibre v1.9.0, the tag the deploy pins, where the span reads:
@@ -41,21 +41,8 @@ if (matches.length !== 1) {
   process.exit(1);
 }
 
-// GitHub's own mark, inlined rather than imported, because the icon set the
-// app depends on has dropped and restored brand glyphs between releases and a
-// missing export fails the build rather than the patch.
-const link = `<a
-          className="hidden shrink-0 items-center text-muted-foreground transition-colors hover:text-foreground lg:flex"
-          href="${process.env.REPOSITORY_URL ?? "https://github.com/seamusrobertmurphy/disturbance-checker"}"
-          rel="noreferrer noopener"
-          target="_blank"
-          title="Source code"
-        >
-          <svg aria-hidden="true" fill="currentColor" height="14" viewBox="0 0 16 16" width="14">
-            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
-          </svg>
-          <span className="sr-only">Source code</span>
-        </a>`;
+// Nothing replaces it. The toolbar simply ends after the theme control.
+const link = "";
 
 // The span was the only reader of the store value, and GeoLibre builds with
 // `tsc -b`, so leaving the binding behind would fail the build under
@@ -79,4 +66,4 @@ if (/projectPath/.test(patched)) {
 }
 
 writeFileSync(target, patched);
-console.log(`Replaced the project path in ${target} with the repository link.`);
+console.log(`Removed the project path from ${target}.`);
