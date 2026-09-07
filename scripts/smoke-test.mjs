@@ -328,8 +328,34 @@ for (const name of ["ocm-v4-regnety", "ocm-v4-edgenext"]) {
   modelBytes += size;
 }
 
+// The super-resolution backdrop, checked on the same terms and for the same
+// reason. It is small enough that a truncated file would still look plausible
+// in a directory listing, so the floor is asserted rather than eyeballed, and
+// the report is read because two operations in this model had to be rewritten
+// to convert at all and a rewrite that drifted would be invisible on screen.
+const sharpReport = JSON.parse(
+  readFileSync(join(vendor, "sen2sr-model.json"), "utf8"),
+);
+const SHARP_MODEL = "sen2srlite-rgbn-x4";
+const sharpSize = statSync(join(vendor, `${SHARP_MODEL}.onnx`)).size;
+assert.ok(
+  sharpSize > 200 * 1024,
+  `vendor/${SHARP_MODEL}.onnx is ${sharpSize} bytes, too small to hold the weights. Re-run scripts/export-sen2sr-model.py.`,
+);
+assert.equal(
+  sharpReport[SHARP_MODEL]?.matchesShipped,
+  true,
+  `vendor/sen2sr-model.json does not record ${SHARP_MODEL} as matching the model ESA ships`,
+);
+assert.equal(
+  sharpReport[SHARP_MODEL]?.deterministic,
+  true,
+  `vendor/sen2sr-model.json does not record ${SHARP_MODEL} as deterministic, and a backdrop that changes between runs cannot be reconstructed from the manifest`,
+);
+
 console.log("smoke test passed");
 console.log(`  guides   ${guides.length}, ${crossLinks} cross-links resolved`);
 console.log(`  model    2 files, ${(modelBytes / 1048576).toFixed(0)} MB, both verified against torch`);
+console.log(`  sharpen  ${(sharpSize / 1024).toFixed(0)} kB, verified against the model ESA ships`);
 console.log(`  bundle   ${(readFileSync(join(root, "dist/index.js")).length / 1024).toFixed(0)} kB`);
 console.log(`  plugin   ${plugin.id} v${plugin.version}`);

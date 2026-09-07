@@ -12,3 +12,33 @@
 - 2026-09-03: The season charts under the reporting periods read NASA POWER (`power.larc.nasa.gov`, daily point API, community AG), chosen because it answers anonymous browser requests with `access-control-allow-origin: *`, needs no key, is current to about four days ago, and carries no non-commercial clause. Open-Meteo sends CORS but its terms are non-commercial, the same reason Earth Engine was dropped; Daymet's single-pixel service sends no CORS header at all. Matters because the next person to reach for a finer grid will find those two first.
 - 2026-09-03: POWER's monthly endpoint returns a thirteenth key per year, `YYYY13`, which is the annual value, and its fill value is -999; the daily endpoint is used instead and the fill is mapped to null in `src/reference/climate.ts`. Matters because a monthly reader that iterates keys blindly gets a phantom month.
 - 2026-09-03: Guide screenshots of the panel are made without GeoLibre, by loading `dist/index.js` into a one-file harness page that stubs `registerRightPanel` and calls `applyProjectState`, served locally and captured with `Google Chrome --headless=new --screenshot --virtual-time-budget=20000`, then cropped and saved as WebP into `docs/images/`. The harness lives in the session scratchpad, not the repository. Matters because the Chrome extension was not connected and the docs figures figS1 to figS4 were produced this way at 400 px wide.
+
+## Super-resolution
+
+2026-09-06: opensr-utils 2.0.0 (ESA OpenSR) was installed as an editable user install for MacPorts python3.12 from `/Volumes/PortableSSD/Github/opensr-utils`, CLI at `~/Library/Python/3.12/bin/opensr-run`. It matters that imports break when the portable SSD is unmounted.
+
+2026-09-06: opensr-utils covers only the 10 m bands B02, B03, B04 and B08, so of the three SOP indices in `src/analysis/deltas.ts` it reaches NDVI alone; NDMI needs B11 and NBR needs B8A and B12, all 20 m and all untouched. It matters because super-resolution cannot improve two of the three findings the tool reports.
+
+2026-09-06: LDSR-S2 is a diffusion model with `sampling_steps: 100` and `sampling_eta: 0.95` in `config_10m.yaml`, so two runs of the same area give different imagery. It matters because a non-reproducible evidence layer cannot be reconstructed from the run manifest, which rules it out as an analysis input for ACR verification.
+
+2026-09-06: `opensr_utils/pipeline.py` line 169 accepts only `cpu` or `cuda`, so Apple MPS is refused and every run on this machine is CPU-bound. It matters when estimating run time for a full tile.
+
+2026-09-06: `opensr_utils/data_utils/writing_utils.py` line 434 casts blended output to the raster's integer dtype, so float reflectance input between 0 and 1 rounds to an all-zero output; verified by running the same scene twice, float then uint16 DN. It matters because the failure is silent and the georeferencing looks correct.
+
+2026-09-06: findings and run guidance recorded in `docs/super-resolution.md`, which is not imported by `src/help/registry.ts` and therefore does not ship in the app.
+
+2026-09-06: measured on this machine, LDSR-S2 has 169.0 M parameters, a 1.1 GB checkpoint, and one 128 px patch takes 133.6 s on CPU, so a 500 ha boundary is about 9 minutes and a full 10980 px tile about 14 days. It matters because the package is written for multi-GPU machines and its README gives no sense of CPU cost.
+
+2026-09-06: `opensr_model.load_pretrained` resolves the checkpoint against the current working directory, so the 1.1 GB file is re-downloaded in every new folder. It matters because it is silent and fills disks.
+
+2026-09-06: `buildWarp` in `src/render/paint.ts` line 84 caps every painted layer at 2048 px on the long side, and `run.ts` line 341 uses that default. It matters because a 90,000 acre AOI at 2.5 m is 7,634 px and gets squashed to 9.3 m on screen, while the free 10 m read paints at 10.0 m, so super-resolution buys nothing visible at project scale.
+
+2026-09-06: on this machine the two vendored cloud models ran a 512 block in 423 ms under ONNX Runtime CPU, against the 263 ms WebGPU and 6,301 ms WebAssembly recorded in `src/raster/omni.ts`. It matters as the only anchor for converting a native timing into a browser one, giving WebGPU about 1.6x faster than native CPU and WebAssembly about 15x slower.
+
+2026-09-06: SEN2SRLite from `sen2sr` 0.8.5 is a 572,336 parameter SPAN convolutional network, one forward pass, bitwise deterministic on rerun, and it exported to a 236 KB ONNX file that matched the model ESA ships to 5.96e-07 on the interior of the reference patch, at 80 to 100 ms per 128 px patch under ONNX Runtime CPU. It matters because it removes the size, cost and reproducibility objections that ruled out LDSR-S2, which was 169 million parameters, 1.1 GB and 133.6 s per patch, verified by `scripts/export-sen2sr-model.py`.
+
+2026-09-06: the SEN2SRLite `HardConstraint` uses `torch.fft` and antialiased bicubic, both of which the ONNX exporter refuses, but the stored low-pass mask is a Gaussian whose spatial kernel holds all its energy inside 31 by 31, and the antialiased bicubic x4 enlargement is exactly a 16 by 16 stride-4 transposed convolution. It matters because rewriting both as fixed convolutions made the whole composite exportable with no loss beyond float32 rounding.
+
+2026-09-06: `torch.onnx.export` with `dynamo=True`, the default in torch 2.13, segfaults this interpreter with EXC_BAD_ACCESS at a null address inside `direct_copy_kernel` in `libtorch_cpu.dylib` during decomposition, on a 3.3 GB process so not memory pressure. It matters because `dynamo=False` exports the same model without complaint and every export here must pass it.
+
+2026-09-06: `Reference_RSWIR_x2` sharpens B05, B06, B07, B8A, B11 and B12 from 20 m to 10 m in 12 ms per patch from a 201 KB ONNX file. It matters because B8A, B11 and B12 are exactly the bands NDMI and NBR need and LDSR-S2 could not touch, so it is the only route to moving `ANALYSIS_SCALE` off 20 m, and it needs B05, B06 and B07 added to `REQUIRED_ASSETS` in `src/stac/search.ts`.

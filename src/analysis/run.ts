@@ -181,7 +181,7 @@ export interface PeriodResult {
  */
 export const BLOCK_SIZE = 512;
 
-function assetsFor(maskId: string) {
+export function assetsFor(maskId: string) {
   const mask = CLOUD_MASKS[maskId] ?? CLOUD_MASKS[DEFAULT_MASK_ID];
   // Everything the analysis needs, for every observation.
   const analysis = new Set<AssetKey>([...INDEX_BANDS, ...mask.requiredAssets]);
@@ -205,7 +205,7 @@ function rgbSubsetOf(observations: Observation[]): number[] {
     .map((entry) => entry.index);
 }
 
-async function compositeForBlock(
+export async function compositeForBlock(
   cache: CogCache,
   observations: Observation[],
   assets: ReturnType<typeof assetsFor>["assets"],

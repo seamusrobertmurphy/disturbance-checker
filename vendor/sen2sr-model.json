@@ -1,0 +1,22 @@
+{
+  "sen2srlite-rgbn-x4": {
+    "variant": "NonReference_RGBN_x4",
+    "parameters": 572336,
+    "kilobytes": 236,
+    "maxRewriteDifference": 2.384185791015625e-07,
+    "maxExportDifference": 5.960464477539062e-07,
+    "deterministic": true,
+    "medianPatchMilliseconds": 356.5,
+    "matchesShipped": true
+  },
+  "sen2srlite-rswir-x2": {
+    "variant": "Reference_RSWIR_x2",
+    "parameters": 566554,
+    "kilobytes": 201,
+    "maxRewriteDifference": 5.960464477539062e-07,
+    "maxExportDifference": 9.5367431640625e-07,
+    "deterministic": true,
+    "medianPatchMilliseconds": 142.3,
+    "matchesShipped": true
+  }
+}
