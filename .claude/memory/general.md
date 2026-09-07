@@ -54,3 +54,23 @@
 2026-09-06: measured in that browser run, the model costs 73.4 ms per 128 px tile on WebGPU once warm and 4.77 s on the first pass including the 236 KB download and session start, while the whole `sharpenView` call took 30.4 s, so the two 512 blocks of COG reading were about 28 s of it and inference 1.8 s. It matters because the header comment on `sharpenView` in `src/analysis/sharpen.ts` estimates roughly a minute of reading for a full 4096 px view, and scaling this measurement puts that nearer two minutes; the under ten seconds it claims for the model is right.
 
 2026-09-06: the tile stitching leaves no seam. Mean absolute row and column gradient at every trim boundary of that render sat within 1.2 standard deviations of the image median, and the one visible horizontal line was a 30 row luminance ramp from field to forest, not a step. It matters because the 8 pixel trim and the overlap it implies were untested until this render.
+
+## Visualisation and atmosphere
+
+2026-09-06: the QGIS and ArcGIS production scripts disagree on the true-colour stretch. `TUVSUD_DisturbanceCheck-QGIS.py` line 756 sets `vis_rgb` to min 0.02, max 0.25, gamma 1.2 and `TUVSUD_DisturbanceCheck-ArcGIS.py` line 936 sets `VIS_RGB` to min 0, max 0.3, gamma 1.2; `RGB_VIS` in `src/defaults.ts` copies the QGIS pair. It matters because the browser tool's fidelity claim is to one of two disagreeing SOPs and a future reviewer will find the other.
+
+2026-09-06: the QGIS pair reads dark on conifer country. Measured over the Vanderhoof view, the 0.02 floor drove 26.7 per cent of red and 16.5 per cent of blue to pure black while the 0.25 ceiling was never approached, the 99th percentiles being 0.159 red, 0.139 green and 0.112 blue, and green clipped only 0.08 per cent, which is the green cast. It matters because the same pair still governs the before-and-after analysis layers, which were deliberately left on it.
+
+2026-09-06: the super-resolution model does not change brightness. Mean reflectance either side of inference matched to four decimals, 0.0419 red, 0.0582 green, 0.0356 blue in and 0.0419, 0.0582, 0.0355 out, so the hard constraint holds in practice. It matters because it rules the model out whenever the backdrop looks wrong.
+
+2026-09-06: Sentinel-2 L2A publishes no cirrus band, verified by querying earth-search for one item; band 10 appears only in `sentinel-2-l1c`, at 60 m, and L1C is top-of-atmosphere. The same L2A item does publish `aot`, `wvp`, `cloud`, `snow`, `nir09`, `coastal` and the three red edges, none of which the tool read before this date. It matters because a cirrus correction cannot be run on the data this tool reads without abandoning surface reflectance.
+
+2026-09-06: AOT and WVP are outputs of Sen2Cor, not independent looks at the sky, and where a scene carries no dense dark vegetation the aerosol retrieval cannot run and Sen2Cor substitutes a constant, a default visibility of 40 km and an optical thickness near 0.2, with nothing in the delivered layer marking which pixels are measured. Validation against AERONET puts it near 9 per cent normalised error with R2 about 0.65 and underestimating most at high load. It matters because it is why `src/analysis/run.ts` reports them and warns only on the difference between windows rather than masking on either.
+
+## Host app
+
+2026-09-06: GeoLibre prints the store's `projectPath` at the right end of its toolbar, `apps/geolibre-desktop/src/components/layout/TopToolbar.tsx` line 1198 at tag v1.9.0, which on a Pages deploy is the deploy's own URL. `scripts/patch-toolbar-project-path.mjs` replaces it at deploy time with a link on GitHub's mark and removes the now-unused store binding, because GeoLibre builds with `tsc -b`. It matters because it is the second deploy-time patch of the host and both must be re-read on a `GEOLIBRE_REF` bump.
+
+## Browser harness
+
+2026-09-06: the way to exercise plugin code against real imagery in a real browser is a scratch entry file built by vite against `src/`, served with the vendor ONNX files and the onnxruntime-web wasm under a local server, driven by headless Chrome with `--enable-unsafe-webgpu --enable-features=Vulkan,WebGPU`, with the page POSTing its results back to that server. Two traps cost a cycle each: a directory request has no file extension so the server must send `text/html` for it or Chrome downloads the page instead of parsing it, and a `cross-origin-embedder-policy: require-corp` header blocks every cross-origin COG read. It matters because the Chrome extension is not connected on this machine and this is the only route to a real render.
