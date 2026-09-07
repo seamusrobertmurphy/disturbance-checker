@@ -71,7 +71,7 @@ export interface SharpImage {
 interface Runtime {
   ort: OrtModule;
   session: OrtSession;
-  /** Which execution provider took the graph, for the run manifest. */
+  /** Which execution provider took the graph, for the panel's status line. */
   provider: string;
 }
 

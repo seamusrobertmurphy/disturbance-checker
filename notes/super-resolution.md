@@ -516,14 +516,39 @@ metre to 10 metre model was rebuilt the same way, came to 201 KB, and matched to
 border, where the padding rule differs from the circular wrap the Fourier version
 implies, and that border is discarded by the tiler in any case.
 
-One thing is not yet proven. Four operators in these graphs, `ConvTranspose`,
-`DepthToSpace`, `Pad` and `ConstantOfShape`, appear in neither
-`ocm-v4-regnety.onnx` nor `ocm-v4-edgenext.onnx`, so nothing in this repository
-demonstrates that ONNX Runtime Web's WebGPU backend implements them. That is the
-one open question before an in-tab build, and it has an escape route, since
-`ConvTranspose` can be written as the `Resize` the cloud models already use, the
-`Pad` disappears if the tile is enlarged before it enters the graph, and
-`ConstantOfShape` is an artefact of that same padding.
+Four operators in these graphs, `ConvTranspose`, `DepthToSpace`, `Pad` and
+`ConstantOfShape`, appear in neither `ocm-v4-regnety.onnx` nor
+`ocm-v4-edgenext.onnx`, so until 2026-09-06 nothing in this repository showed
+that ONNX Runtime Web implemented them. It does. The smoke test creates a
+session from the shipped graph and runs one tile on the WebAssembly backend,
+which took 243 ms in Node, and the browser run described below took the same
+graph on WebGPU. The escape route drafted against that risk, writing
+`ConvTranspose` as the `Resize` the cloud models already use and enlarging the
+tile before it enters the graph to remove the `Pad` and the `ConstantOfShape`
+that follows it, was not needed.
+
+### Rendered in Chrome
+
+On 2026-09-06 the built `sharpenView` was driven in headless Chrome 152 over an
+8.0 by 5.0 km view near Vanderhoof, British Columbia, bounded at 123.060 to
+122.980 west and 53.820 to 53.865 north, on EPSG:32610, over the eight
+observations the catalogue returned between 1 July and 15 September 2024 under
+the Sen2Cor scene classification mask. ONNX Runtime Web took the graph on the
+WebGPU provider rather than the WebAssembly fallback, and the run returned a
+2,108 by 2,008 pixel image at 2.5 m that decoded into an `img` element, 99.92
+per cent of it opaque.
+
+The model cost 73.4 ms per 128 pixel tile once warm, 1.83 seconds for the 25
+tiles the view needed, against 4.77 seconds on the first pass with the 236 KB
+download and the session start included. The whole call took 30.4 seconds, so
+reading the two 512 pixel blocks of imagery over the network was about 28 of
+them and inference under two.
+
+The tiling leaves no seam. Mean absolute row and column gradient at every trim
+boundary of that image sat within 1.2 standard deviations of the image median,
+and the one visible horizontal line proved to be a 30 row luminance ramp from
+field to forest rather than a step, so the 8 pixel trim and the overlap it
+implies do what they were written to do.
 
 ### Accuracy measured
 

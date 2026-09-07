@@ -36,7 +36,10 @@ import { assetsFor, compositeForBlock } from "./run";
 //
 // Nothing here feeds a number. The indices, the classification, the histogram
 // and the class areas are untouched, and this layer is not cited in a finding.
-// It is a picture, and the run manifest records it as one.
+// It is a picture, and the run manifest does not mention it, deliberately. A
+// manifest is built from the state a run was carried out with, and a backdrop
+// asked for afterwards over a view the operator happened to be looking at is
+// not part of that state and is not persisted with it.
 
 /** Metres per pixel the model reads. Not the analysis scale, deliberately. */
 const SOURCE_SCALE = 10;
@@ -212,9 +215,12 @@ function paintSharp(image: SharpImage, warp: Warp) {
  * Build the backdrop.
  *
  * Reported in three parts, because they have very different costs and an
- * operator watching one bar should be able to tell reading from inference. On
- * an M1 with WebGPU a full 4096 pixel view is roughly a minute of reading and
- * under ten seconds of model.
+ * operator watching one bar should be able to tell reading from inference.
+ * Measured on 2026-09-06 in Chrome on an M1, a 2,108 pixel view over eight
+ * overpasses took 30.4 seconds, of which about 28 were reading imagery and 1.8
+ * were the model, at 73.4 ms per tile once the graph was warm. Carried to a
+ * full 4,096 pixel view that is roughly two minutes of reading and under ten
+ * seconds of model.
  */
 export async function sharpenView(
   request: SharpenRequest,
