@@ -140,6 +140,8 @@ export class DisturbancePanel {
    */
   private sharpenAbort: AbortController | null = null;
   private sharpenStatus = "";
+  private sharpenProgress = 0;
+  private sharpenBusy = false;
 
   constructor(
     private readonly app: GeoLibreAppAPI,
@@ -2353,20 +2355,22 @@ export class DisturbancePanel {
       return wrap;
     }
 
+    // Primary, and side by side at full width. These are the only buttons in
+    // the visual section that start work rather than toggle something already
+    // drawn, and a run of identical grey buttons hid that.
     for (const period of this.state.results) {
-      const row = el("div", "dc-row");
+      const row = el("div", "dc-row dc-sharpen-row");
       const prefix = this.state.results.length > 1 ? `${period.periodId} ` : "";
       row.appendChild(
-        button(`${prefix}Pre`, () => void this.sharpen(period, "pre"), "secondary"),
+        button(`Sharpen ${prefix}Pre`, () => void this.sharpen(period, "pre"), "primary"),
       );
       row.appendChild(
-        button(`${prefix}Post`, () => void this.sharpen(period, "post"), "secondary"),
+        button(`Sharpen ${prefix}Post`, () => void this.sharpen(period, "post"), "primary"),
       );
       wrap.appendChild(row);
     }
 
-    const status = el("p", "dc-hint dc-sharpen-status", this.sharpenStatus);
-    wrap.appendChild(status);
+    wrap.appendChild(this.renderSharpenStatus());
 
     wrap.appendChild(
       el(
@@ -2379,10 +2383,56 @@ export class DisturbancePanel {
     return wrap;
   }
 
-  private setSharpenStatus(message: string): void {
+  /**
+   * The sharpen's own progress, given its own block rather than a hint line.
+   *
+   * A sharpen takes about half a minute, nearly all of it reading imagery, and
+   * the old grey 10.5 px line under the buttons was the same size and colour as
+   * the caveat paragraph beneath it, so an operator could press Pre and see
+   * nothing change. This states what is happening in the accent colour, carries
+   * a bar for the fraction the work reports, and announces itself to a screen
+   * reader through aria-live.
+   */
+  private renderSharpenStatus(): HTMLElement {
+    const wrap = el("div", "dc-sharpen-status");
+    wrap.setAttribute("role", "status");
+    wrap.setAttribute("aria-live", "polite");
+    wrap.appendChild(el("span", "dc-sharpen-dot"));
+    wrap.appendChild(el("span", "dc-sharpen-message", this.sharpenStatus));
+    const track = el("span", "dc-sharpen-track");
+    track.appendChild(el("span", "dc-sharpen-fill"));
+    wrap.appendChild(track);
+    this.paintSharpenStatus(wrap);
+    return wrap;
+  }
+
+  /** Push the held status into whichever block is on screen. */
+  private paintSharpenStatus(node: HTMLElement): void {
+    node.hidden = this.sharpenStatus === "";
+    node.classList.toggle("dc-sharpen-busy", this.sharpenBusy);
+    const message = node.querySelector(".dc-sharpen-message");
+    if (message) message.textContent = this.sharpenStatus;
+    const fill = node.querySelector(".dc-sharpen-fill") as HTMLElement | null;
+    if (fill) {
+      const percent = Math.round(
+        Math.min(1, Math.max(0, this.sharpenProgress)) * 100,
+      );
+      fill.style.width = `${percent}%`;
+    }
+  }
+
+  private setSharpenStatus(
+    message: string,
+    progress = this.sharpenProgress,
+    busy = this.sharpenBusy,
+  ): void {
     this.sharpenStatus = message;
-    const node = this.container?.querySelector(".dc-sharpen-status");
-    if (node) node.textContent = message;
+    this.sharpenProgress = progress;
+    this.sharpenBusy = busy;
+    const node = this.container?.querySelector(
+      ".dc-sharpen-status",
+    ) as HTMLElement | null;
+    if (node) this.paintSharpenStatus(node);
   }
 
   private async sharpen(
@@ -2391,7 +2441,7 @@ export class DisturbancePanel {
   ): Promise<void> {
     const bounds = this.mapBounds();
     if (!bounds) {
-      this.setSharpenStatus("The map view could not be read.");
+      this.setSharpenStatus("The map view could not be read.", 0, false);
       return;
     }
 
@@ -2401,6 +2451,13 @@ export class DisturbancePanel {
     const abort = new AbortController();
     this.sharpenAbort = abort;
 
+    const which_ = which === "pre" ? "Pre" : "Post";
+    this.setSharpenStatus(
+      `Sharpening the ${which_.toLowerCase()} view. This takes about half a minute.`,
+      0,
+      true,
+    );
+
     try {
       const sharp = await sharpenView({
         bounds,
@@ -2409,7 +2466,12 @@ export class DisturbancePanel {
           which === "pre" ? result.preObservations : result.postObservations,
         maskId: this.state.maskId,
         maskOptions: this.state.maskOptions,
-        onProgress: (message) => this.setSharpenStatus(message),
+        onProgress: (message, fraction) =>
+          this.setSharpenStatus(
+            `${which_}, ${message}`,
+            fraction ?? this.sharpenProgress,
+            true,
+          ),
         signal: abort.signal,
       });
 
@@ -2426,12 +2488,16 @@ export class DisturbancePanel {
 
       const painted = sharp.paintedScale.toFixed(1);
       this.setSharpenStatus(
-        `Drawn at ${painted} m per pixel from ${sharp.tiles} tiles on ${sharp.provider}. Zoom or pan and sharpen again to move it.`,
+        `${which_} drawn at ${painted} m per pixel from ${sharp.tiles} tiles on ${sharp.provider}. Zoom or pan and sharpen again to move it.`,
+        1,
+        false,
       );
     } catch (error) {
       if (abort.signal.aborted) return;
       this.setSharpenStatus(
         error instanceof Error ? error.message : "The sharpen failed.",
+        0,
+        false,
       );
     } finally {
       if (this.sharpenAbort === abort) this.sharpenAbort = null;
