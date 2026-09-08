@@ -37,11 +37,10 @@ The progress line under the Run button names the stage.
 
 ### Success looks like
 
-Twelve layers per period in the Layer panel. Reading top down: three classified
-rasters visible, three continuous deltas hidden, four single-date index layers
-hidden, two RGB composites hidden. Over the basemap you should see coloured
-cells only where disturbance was detected, with everything undisturbed
-transparent.
+Five layers per period in the Layer panel. Reading top down: three classified
+rasters visible, then the pre and post true-colour composites hidden beneath
+them. Over the basemap you should see coloured cells only where disturbance was
+detected, with everything undisturbed transparent.
 
 Section 6 shows overpass counts, three histograms with draggable break handles,
 and a class-area table in hectares. Section 7 has the manifest.

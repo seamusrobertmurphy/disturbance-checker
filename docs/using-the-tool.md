@@ -146,10 +146,10 @@ A few thousand hectares takes roughly fifteen seconds. Almost all of that is
 downloading imagery, so it scales with the number of overpasses in the two
 windows rather than with the area. The progress line names the stage.
 
-When it finishes you get twelve layers per period in the Layer panel. The three
-classified rasters are visible and on top; the continuous deltas, the
-single-date index layers and the before-and-after true-colour composites are
-beneath them and switched off. Turn those on when you need context.
+When it finishes you get five layers per period in the Layer panel. The three
+classified rasters are visible and on top; the before-and-after true-colour
+composites are beneath them and switched off. Turn those on when you need
+context.
 
 **Read the overpass count before anything else.** The composite is a median over
 the observations that survived cloud masking, and a median needs at least four

@@ -19,34 +19,41 @@ reports.
 
 ## Cheat sheet
 
-Everything the tool does sits in one panel on the right, in three blocks. The
-five sections above the button are what you give it, the button runs the check,
-and the three below are what it gives back. Nothing else is needed to run one.
+Condensed from the SOP cheat sheet of 3 September 2026, covering the interactive
+tool only. The full sheet is in [`docs/cheat-sheet.pdf`](docs/cheat-sheet.pdf).
 
-![Where each tool sits in the window](docs/images/fig-where-things-are.svg)
+**Before you start.** No Python environment, no plugin manager, no elevated
+shell, no sign-in, no Cloud project and no billing. Any current browser serves,
+including Edge on a managed Windows 11 machine at standard user permissions. A
+restricted workstation must be able to reach the application host,
+`earth-search.aws.element84.com` and `sentinel-cogs.s3.us-west-2.amazonaws.com`
+for the catalogue and the pixels, `services3.arcgis.com` and `apps.fs.usda.gov`
+for fire perimeters, the aerial detection survey and the activity record,
+`lfps.usgs.gov` and `imagery.geoplatform.gov` for LANDFIRE and LCMS,
+`power.larc.nasa.gov` for the climate series, `cwfis.cfs.nrcan.gc.ca` for
+Canadian burned area, and `s3-us-west-2.amazonaws.com` with
+`services.arcgisonline.com` for the dated imagery archive. No data-handling
+exemption is needed, because uploaded site data is parsed in the browser and
+never leaves the workstation.
 
-| | Section | What you do there |
-|---|---|---|
-| **Set it up** | 1 Imagery | Pick the cloud mask. Scene classification is the default and costs nothing; OmniCloudMask is a 57 MB model that runs in the tab and masks better. Set the cloud ceiling, which throws out whole scenes before anything downloads. |
-| | 2 Area of interest | Type bounds, paste GeoJSON, or upload the project boundary. Uploading the boundary in section 5 sets this for you. |
-| | 3 Reporting periods | Pre and post windows, one pair or many. The chart underneath is daily temperature, sunlight, rain and snow at the site, so put both windows over the same part of the curve. July to September is the safe band. |
-| | 4 Severity thresholds | Low, Moderate and High cut points for each of the three indices. Editable here before the first run, draggable on the histogram after it. Moving one off its default requires a written justification. |
-| | 5 Site data | Project boundary, streamside management zones and plot points, as zipped shapefile, GeoJSON or KML. Parsed in the tab and never uploaded anywhere. |
-| **Run** | Run check | One button. Everything above it is an input, everything below it is an answer. Re-running costs seconds. |
-| **Read it** | 6 Results | Overpass counts, a histogram per index with draggable breaks, and hectares per class. Read the histogram before you trust the map. |
-| | 7 Visual check | Before and after true colour, sharpenable to 2.5 metres, beside Esri's dated sub-metre archive. This is where you find out what the changed pixels actually are. |
-| | 8 Corroboration | The same ground as four unrelated records: mapped fire, LCMS, LANDFIRE and the Forest Service activity record. |
+| Section | What you do there |
+|---|---|
+| **1 Imagery** | Provenance, not a control. Scenes come from Element 84's Earth Search catalogue and are read out of the Sentinel-2 Level-2A cloud-optimised GeoTIFFs on AWS Open Data by range request at 20 m. The +1000 DN offset is removed per scene from the catalogue's `earthsearch:boa_offset_applied` flag rather than inferred from the date, so scenes either side of the January 2022 baseline are comparable. Choose the cloud mask here. |
+| **Two cloud masks** | The Sen2Cor scene classification layer ships with every product and supplies snow, saturated and no-data either way, but alone it misses thin cloud edge and labels topographic shade as cast shadow. OmniCloudMask runs in the tab and decides from shape and texture. On a 61 per cent cloudy Blackfeet overpass of 27 August 2024 it called 11.4 per cent of the block cloud or shadow where the scene classification called it clear, against 0.75 per cent the other way. Either mask feeds a per-pixel median. Water is masked at the delta stage, in both windows if it is water in either. |
+| **2 Area of interest** | Three routes, in order of reliability. Upload the project boundary under Site data, which sets the extent and draws the outline. Or type bounds in EPSG:4326, or use the current map view; reversed pairs are normalised, so a swapped east and west cannot silently return an empty geometry. Or paste GeoJSON. |
+| **Buffer first** | There is no buffer control here, unlike the QGIS and ArcGIS scripts. Roughly 500 m earns its place, because a hard clip at the legal boundary cuts off the far half of a cut block straddling the line. Simplify at 10 m first, buffer on a bevel join, save separately, name it so it cannot be mistaken for the boundary. Every hectare figure is read off the unbuffered boundary: buffering a 4,712 ha parcel by 500 m returned 6,067 ha, an inflation of 29 per cent. Load the unbuffered boundary as an outline so a reader sees which ring a number came from. |
+| **3 Reporting periods** | Four dates each, the start and end of the pre window and of the post window. Each window is a range a composite is built from, not one acquisition. Defaults are 1 August to 1 September; July to September is acceptable. Add reporting period chains a further pair, and all periods share one set of breaks, so differences between them are real rather than an artefact of settings. |
+| **Confirm the season** | The panel draws daily air temperature, sunlight, rain over the previous four weeks and snow depth at the extent's centre from NASA POWER, each period year as a line over a grey ten-year mean. Three checks. **Same dates:** one shaded band, not two. A March pre window against an October post window differed by 11.5 °C and 270 mm of rain. **Same season:** lines on the mean, since a deciduous canopy at 1 April in a late year runs three weeks behind. **Same ground:** no snow in either window. The grid is about fifty kilometres across, so it is the season of the district. |
+| **4 Class breaks** | dNDVI 0.10 / 0.20 / 0.35, dNDMI 0.15 / 0.30 / 0.45, dNBR 0.10 / 0.27 / 0.44, for Low, Moderate and High. Grey undisturbed and masked out, yellow Low to screen, orange Moderate to inspect, red High to draft a finding on. dNDVI and dNDMI come from SOP Step 6, dNBR from MTBS and USFS PNW. Ordering is enforced, and a value moved off its default marks that index adjusted and requires a written justification. Applying a moved break re-runs the whole check, so move all three before applying. |
+| **5 Site data** | Project boundary, streamside management zones and plot points, as zipped shapefile, GeoJSON or KML. Never uploaded anywhere. Loading a boundary also sets the extent. Plot points are labelled with their identifier so a screenshot ties to an inventory record; the column is detected automatically, preferring `Plot ID` or `PLOT_NO` over `OBJECTID`, and should be checked. Zip the whole shapefile: without the `.prj` there is nothing to reproject from and a Montana project lands in the Gulf of Guinea. |
+| **Run check** | A small extent finishes under a minute; a large one, or several periods, takes longer, because pixels are fetched and the cloud model run in the tab rather than on a server. Success is five layers per period, three classified rasters visible on top and the pre and post true-colour composites hidden beneath, each carrying its period prefix. |
+| **6 Results** | Overpass counts per window, three histograms with draggable handles, and class areas in hectares on the project UTM zone at 20 m. Read the overpass counts first, because fewer than four clear looks per window makes the median unstable. Then read the histogram shape before touching a break: a long right tail with no gap is contamination, not disturbance, and a clear gap is where the Low break belongs. Quote the share of the extent as well as the hectares. Resolve every diagnostic before treating anything on screen as real. |
+| **Cross-check** | dNDVI and dNDMI are pre minus post, positive meaning loss; dNBR is post minus pre, positive meaning burned. Read all three before drafting. dNDVI High with dNBR clean is harvest, blowdown or clearing, so read the edge geometry. dNDVI High with dNBR High is fire, to be confirmed against the perimeter record. dNDMI High alone is moisture stress, to be corroborated against the aerial detection survey. Right angles and linear edges point to harvest, road or right-of-way; curvilinear or amorphous edges to blowdown, decline or slide. |
+| **7 Visual check** | A crossfade between the pre and post true-colour composites over fixed ground, with a blink control. Both are built from the masked observations the analysis used, not a single scene, so a clearing jumps between two dates and noise does not. Beneath it, a search of Esri's dated World Imagery archive for every distinct photograph of the site. Quote the capture date, never the release date: the photograph inside a release was frequently taken a year or more earlier, and citing one for the other is a factual error in a finding. |
+| **8 Corroboration** | Never an input. Mapped fire from the interagency perimeter feed, MTBS and the Canadian National Burned Area Composite; the Forest Service aerial detection survey by year, agent, damage type and acreage, which is what lets a dNDMI signal be attributed rather than merely described; the management activity record; LANDFIRE and LCMS as overlays. An empty return is not proof, because the activity record covers National Forest System land only, so on private, state or tribal trust ownership a blank return is an absence of jurisdiction, not of harvest. |
 
-![Every tool in the panel, called out](docs/images/fig-tool-by-tool.svg)
-
-Three things decide whether a run is trustworthy, and all three are visible in
-the panel. The windows must sit at the same point of the season, or phenology
-alone will produce a delta. Each window needs at least four scenes, and fewer is
-flagged. The histogram must show two humps with a gap between them; one hump
-with a long tail is composite contamination rather than disturbance.
-
-Layers arrive in the Layers panel on the left, twelve per period, classified
-rasters on top. Take a screenshot of anything you want to keep.
+There is no export. Screenshots plus the parameters saved with the project are
+the screening deliverable; an archival GeoTIFF means the QGIS or ArcGIS script.
 
 ## Documentation
 
@@ -100,7 +107,8 @@ panel then, per period:
 6. Classifies each delta into Low, Moderate and High.
 7. Counts per-class hectares on the native Sentinel-2 UTM grid, clipped to the
    boundary polygon rather than its bounding box.
-8. Paints twelve layers per period and adds them to GeoLibre, classified
+8. Paints five layers per period, the pre and post true-colour composites and
+   the three classified rasters, and adds them to GeoLibre with the classified
    rasters on top.
 
 Nothing about the analysis is hidden in the tool. Every constant traces to a

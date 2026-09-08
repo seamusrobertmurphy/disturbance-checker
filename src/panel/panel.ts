@@ -2625,9 +2625,9 @@ export class DisturbancePanel {
   /**
    * SOP Step 7 layer order.
    *
-   * Layers are added bottom-up so the classified rasters finish on top, with
-   * the continuous deltas, single-date indices and RGB pairs beneath them,
-   * hidden but available for the cross-check Appendix A.2 and A.3 depend on.
+   * Layers are added bottom-up so the three classified rasters finish on top,
+   * with the pre and post true-colour pair beneath them, hidden but available
+   * for the cross-check Appendix A.2 and A.3 depend on. Five per period.
    * The run emits them tagged by role; the order is imposed here so that
    * changing what a run produces cannot quietly reshuffle the map.
    */
