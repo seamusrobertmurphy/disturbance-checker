@@ -121,6 +121,9 @@ const OPEN_SECTIONS_KEY = "tuvsud.disturbance.openSections";
  */
 const CORROBORATION_TIMEOUT = 90_000;
 
+/** How long to wait before asking a registry a second time. */
+const RETRY_PAUSE = 1_500;
+
 const CONTEXT_META: Record<
   ContextRole,
   { label: string; colour: string; hint: string }
@@ -2010,7 +2013,7 @@ export class DisturbancePanel {
         this.notice(
           "warning",
           "Not every registry answered",
-          `This search could not reach ${held.unavailable.join(" or ")}. Everything below comes from the sources that did answer, and an absence there is not evidence of absence on the ground. Search again before citing silence from a source that failed.`,
+          `Asked twice and still no answer from ${held.unavailable.join("; ")}. Everything below comes from the sources that did answer. An absence from one that failed is not evidence of absence on the ground, so search again before citing its silence in a finding.`,
         ),
       );
     }
@@ -2310,21 +2313,54 @@ export class DisturbancePanel {
     // with Promise.all meant one slow or broken registry threw away the
     // answers the other two had already returned, which is the opposite of
     // what a verifier needs. A source that fails is named instead.
+    // Ask each registry twice before giving up on it.
+    //
+    // These services answer from a shared government estate under variable
+    // load, and the spread is wide rather than occasional: three identical
+    // insect-survey queries on 2026-09-08 came back in 447, 588 and 8,581
+    // milliseconds. A single transient failure was enough to strike a source
+    // off a search whose whole purpose is to say whether the record is silent,
+    // so one retry runs before that conclusion is drawn. An abort is never
+    // retried, because it means the operator or the clock stopped the request
+    // on purpose.
+    const attempt = async <T>(run: (signal: AbortSignal) => Promise<T>) => {
+      try {
+        return await run(AbortSignal.timeout(CORROBORATION_TIMEOUT));
+      } catch (error) {
+        if (error instanceof Error && error.name === "TimeoutError") throw error;
+        await new Promise((resolve) => window.setTimeout(resolve, RETRY_PAUSE));
+        return run(AbortSignal.timeout(CORROBORATION_TIMEOUT));
+      }
+    };
+
     const settled = await Promise.allSettled([
-      insectAndDisease(bbox, years, AbortSignal.timeout(CORROBORATION_TIMEOUT)),
-      fireEvidence(bbox, years, AbortSignal.timeout(CORROBORATION_TIMEOUT)),
-      managementRecord(bbox, years, AbortSignal.timeout(CORROBORATION_TIMEOUT)),
+      attempt((signal) => insectAndDisease(bbox, years, signal)),
+      attempt((signal) => fireEvidence(bbox, years, signal)),
+      attempt((signal) => managementRecord(bbox, years, signal)),
     ]);
     const [idsResult, firesResult, managementResult] = settled;
 
-    const unavailable: string[] = [];
-    if (idsResult.status === "rejected") {
-      unavailable.push("the aerial insect and disease survey");
-    }
-    if (firesResult.status === "rejected") unavailable.push("the fire registries");
-    if (managementResult.status === "rejected") {
-      unavailable.push("the Forest Service activity record");
-    }
+    // Name the source and say what actually happened to it. "Could not reach"
+    // is the wrong thing to print when the service answered and refused the
+    // query, and an operator deciding whether to search again or to stop
+    // citing the source needs to know which of the two it was.
+    const describeSource = (
+      label: string,
+      result: PromiseSettledResult<unknown>,
+    ): string | null => {
+      if (result.status !== "rejected") return null;
+      const reason = result.reason;
+      if (reason instanceof Error && reason.name === "TimeoutError") {
+        return `${label} (no answer within ${CORROBORATION_TIMEOUT / 1000} seconds)`;
+      }
+      return `${label} (${describeError(reason)})`;
+    };
+
+    const unavailable = [
+      describeSource("the aerial insect and disease survey", idsResult),
+      describeSource("the fire registries", firesResult),
+      describeSource("the Forest Service activity record", managementResult),
+    ].filter((entry): entry is string => entry !== null);
 
     if (unavailable.length === settled.length) {
       const reasons = settled.flatMap((entry) =>
