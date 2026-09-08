@@ -104,6 +104,16 @@ export interface State {
   corroborationError: string | null;
 
   /**
+   * A corroborating overlay that would not draw.
+   *
+   * Kept apart from `error`, which the run bar renders under "Run failed".
+   * LANDFIRE having no product for a year says nothing about whether the
+   * analysis succeeded, and reporting it there told an operator their check
+   * had failed when it had not.
+   */
+  referenceError: string | null;
+
+  /**
    * Daily climate at the centre of the area of interest, for the years the
    * reporting periods touch and the ten before them.
    *
@@ -127,14 +137,15 @@ export interface Corroboration {
   years: number[];
   fetchedAt: number;
   /**
-   * Sources that were asked and did not answer, named.
+   * Sources that were asked and did not answer.
    *
    * An empty result from a registry that failed reads exactly like an empty
    * result from ground that was never damaged, and the two mean opposite
-   * things. A source that errored or timed out is listed here so silence is
-   * never read as evidence.
+   * things. Each carries a stable key so the section that would otherwise
+   * print "nothing recorded" can check whether its own source answered at all
+   * before saying so.
    */
-  unavailable: string[];
+  unavailable: Array<{ key: "ids" | "fire" | "management"; label: string; reason: string }>;
 }
 
 function defaultPeriod(id: string, preYear: number, postYear: number): Period {
@@ -184,6 +195,7 @@ export function createState(): State {
     corroboration: null,
     corroborationStatus: "idle",
     corroborationError: null,
+    referenceError: null,
 
     climate: null,
     climateStatus: "idle",

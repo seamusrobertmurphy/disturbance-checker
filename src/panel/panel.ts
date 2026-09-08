@@ -37,6 +37,7 @@ import {
   loadCatalogue,
   overlayFor,
   regionFor,
+  availableYears,
   serviceFor,
 } from "../reference/landfire";
 import { NBAC_ATTRIBUTION, NIFC_ATTRIBUTION } from "../reference/fire";
@@ -2013,7 +2014,7 @@ export class DisturbancePanel {
         this.notice(
           "warning",
           "Not every registry answered",
-          `Asked twice and still no answer from ${held.unavailable.join("; ")}. Everything below comes from the sources that did answer. An absence from one that failed is not evidence of absence on the ground, so search again before citing its silence in a finding.`,
+          `Asked twice and still no answer from ${held.unavailable.map((entry) => `${entry.label} (${entry.reason})`).join("; ")}. Everything below comes from the sources that did answer. An absence from one that failed is not evidence of absence on the ground, so search again before citing its silence in a finding.`,
         ),
       );
     }
@@ -2127,9 +2128,37 @@ export class DisturbancePanel {
     }
 
     body.appendChild(el("div", "dc-subhead", "Insect and disease survey"));
-    if (held.ids.groups.length === 0) {
+    // Three different empties, which mean three different things.
+    //
+    // A query that failed, an area the survey never flew, and a surveyed area
+    // where nothing was recorded all arrive here as an empty list. Saying "no
+    // damage recorded" for the first two puts an absence of evidence into a
+    // verifier's hands as evidence of absence, which is the one mistake this
+    // section exists to prevent.
+    const idsFailed = held.unavailable.find((entry) => entry.key === "ids");
+    if (idsFailed) {
       body.appendChild(
-        el("p", "dc-hint", "No damage recorded over this area in these years."),
+        this.notice(
+          "warning",
+          "The survey was not read",
+          `This search could not read the aerial insect and disease survey (${idsFailed.reason}), so nothing is known either way about insect or disease damage over this area. Search again; do not record this as an absence.`,
+        ),
+      );
+    } else if (!held.ids.covered) {
+      body.appendChild(
+        this.notice(
+          "info",
+          "Outside the surveyed area",
+          "The aerial insect and disease survey covers the United States only, so nothing was asked about this area. That is an absence of jurisdiction, not an absence of damage.",
+        ),
+      );
+    } else if (held.ids.groups.length === 0) {
+      body.appendChild(
+        el(
+          "p",
+          "dc-hint",
+          "The survey covers this area and recorded no damage over these years. That is a reading, not a gap.",
+        ),
       );
     } else {
       const table = el("div", "dc-damage");
@@ -2208,6 +2237,18 @@ export class DisturbancePanel {
       }
     }
 
+    // An overlay that would not draw is reported here, beside the buttons that
+    // draw them, and never as a failure of the run.
+    if (this.state.referenceError) {
+      body.appendChild(
+        this.notice(
+          "warning",
+          "An overlay could not be drawn",
+          this.state.referenceError,
+        ),
+      );
+    }
+
     const attributions = [
       MTBS_ATTRIBUTION,
       management ? FACTS_ATTRIBUTION : null,
@@ -2245,12 +2286,30 @@ export class DisturbancePanel {
     const year = Number(period.postEnd.slice(0, 4));
     try {
       const catalogue = await loadCatalogue();
-      const service = serviceFor(catalogue, year, region);
+      // Fall back to the newest year the catalogue does hold.
+      //
+      // LANDFIRE lags the calendar, so the post window's year is routinely
+      // absent: on 2026-09-08 the newest disturbance product was 2024. Giving
+      // up left the operator with nothing when a product one or two years
+      // older would still have told them what the agency last recorded there.
+      // The layer is named for the year actually drawn, so nothing is passed
+      // off as the year that was asked for.
+      const service =
+        serviceFor(catalogue, year, region) ??
+        (() => {
+          const newest = availableYears(catalogue, region)[0];
+          return newest ? serviceFor(catalogue, newest, region) : null;
+        })();
       if (!service) {
         this.patch({
-          error: `LANDFIRE has not published a ${year} disturbance product for this region yet. It lags the calendar by a year or more, and an absent product is not an absence of disturbance.`,
+          referenceError: `LANDFIRE publishes no disturbance product for this region at all, so there is nothing to draw. An absent product is not an absence of disturbance.`,
         });
         return;
+      }
+      if (service.year !== year) {
+        this.patch({
+          referenceError: `LANDFIRE has not published ${year} yet, so the ${service.year} disturbance product is drawn instead. It lags the calendar by a year or more, and an absent product is not an absence of disturbance.`,
+        });
       }
       const overlay = await overlayFor(result.grid, service);
       this.landfireLegend = overlay.legend;
@@ -2264,7 +2323,7 @@ export class DisturbancePanel {
       });
       this.rerender();
     } catch (error) {
-      this.patch({ error: describeError(error) });
+      this.patch({ referenceError: describeError(error) });
     }
   }
 
@@ -2286,7 +2345,7 @@ export class DisturbancePanel {
         opacity: 0.75,
       });
     } catch (error) {
-      this.patch({ error: describeError(error) });
+      this.patch({ referenceError: describeError(error) });
     }
   }
 
@@ -2303,7 +2362,7 @@ export class DisturbancePanel {
     if (!bbox) return;
     const years = yearsCovered(this.state.periods);
 
-    this.patch({ corroborationStatus: "loading", corroborationError: null });
+    this.patch({ corroborationStatus: "loading", corroborationError: null, referenceError: null });
 
     // Each registry is asked on its own clock and settled on its own.
     //
@@ -2345,22 +2404,24 @@ export class DisturbancePanel {
     // query, and an operator deciding whether to search again or to stop
     // citing the source needs to know which of the two it was.
     const describeSource = (
+      key: "ids" | "fire" | "management",
       label: string,
       result: PromiseSettledResult<unknown>,
-    ): string | null => {
+    ) => {
       if (result.status !== "rejected") return null;
       const reason = result.reason;
-      if (reason instanceof Error && reason.name === "TimeoutError") {
-        return `${label} (no answer within ${CORROBORATION_TIMEOUT / 1000} seconds)`;
-      }
-      return `${label} (${describeError(reason)})`;
+      const detail =
+        reason instanceof Error && reason.name === "TimeoutError"
+          ? `no answer within ${CORROBORATION_TIMEOUT / 1000} seconds`
+          : describeError(reason);
+      return { key, label, reason: detail };
     };
 
     const unavailable = [
-      describeSource("the aerial insect and disease survey", idsResult),
-      describeSource("the fire registries", firesResult),
-      describeSource("the Forest Service activity record", managementResult),
-    ].filter((entry): entry is string => entry !== null);
+      describeSource("ids", "the aerial insect and disease survey", idsResult),
+      describeSource("fire", "the fire registries", firesResult),
+      describeSource("management", "the Forest Service activity record", managementResult),
+    ].filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
     if (unavailable.length === settled.length) {
       const reasons = settled.flatMap((entry) =>
