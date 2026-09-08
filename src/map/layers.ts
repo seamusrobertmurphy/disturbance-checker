@@ -26,7 +26,11 @@ export type VectorRole =
   | "smz"
   | "plots"
   | "harvest"
-  | "fire";
+  | "fire"
+  // The aerial survey maps damage as either a sketched stand or a dropped
+  // point, and the two are drawn as what they are rather than merged.
+  | "damage"
+  | "damage-point";
 
 export interface ManagedLayer {
   id: string;
@@ -330,7 +334,7 @@ export class MapLayerManager {
       try {
         map.addSource(sourceId, { type: "geojson", data: options.geojson });
 
-        if (options.role === "plots") {
+        if (options.role === "plots" || options.role === "damage-point") {
           const circleId = `${id}-circle`;
           // Plots are orientation, not evidence. They exist so a screenshot
           // of a disturbance polygon can be tied to a plot number, and a
@@ -338,17 +342,20 @@ export class MapLayerManager {
           // obscures the thing being screenshotted. Small, semi-transparent
           // and a hairline stroke: findable when looked for, invisible when
           // not.
+          const damage = options.role === "damage-point";
           map.addLayer({
             id: circleId,
             type: "circle",
             source: sourceId,
             paint: {
-              "circle-radius": 3,
+              // A damage observation is evidence being read rather than a
+              // reference marker, so it is drawn a little heavier than a plot.
+              "circle-radius": damage ? 4.5 : 3,
               "circle-color": options.color,
-              "circle-opacity": 0.65,
+              "circle-opacity": damage ? 0.8 : 0.65,
               "circle-stroke-color": "#ffffff",
-              "circle-stroke-width": 0.75,
-              "circle-stroke-opacity": 0.7,
+              "circle-stroke-width": damage ? 1 : 0.75,
+              "circle-stroke-opacity": damage ? 0.85 : 0.7,
             },
           });
           nativeLayerIds.push(circleId);
@@ -401,7 +408,9 @@ export class MapLayerManager {
                     ? 0.18
                     : options.role === "harvest"
                       ? 0.12
-                      : 0.22,
+                      : options.role === "damage"
+                        ? 0.28
+                        : 0.22,
               },
             });
           }
@@ -420,6 +429,7 @@ export class MapLayerManager {
                     : options.role === "harvest"
                       ? [6, 3]
                       : [1, 0],
+              "line-opacity": options.role === "damage" ? 0.9 : 1,
             },
           });
           if (options.role !== "boundary") nativeLayerIds.push(fillId);

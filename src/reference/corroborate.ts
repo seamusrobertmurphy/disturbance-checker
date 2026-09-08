@@ -9,6 +9,7 @@ import {
   interagencyFires,
   withinCanada,
   type FireRecord,
+  type FireSource,
 } from "./fire";
 import { managementActivity, type ManagementSummary } from "./management";
 
@@ -35,8 +36,21 @@ const FS_ARCGIS = "https://apps.fs.usda.gov/arcx/rest/services/EDW";
 export const IDS_SERVICE = `${FS_ARCGIS}/EDW_InsectandDiseaseSurvey_01/MapServer`;
 export const MTBS_SERVICE = `${FS_ARCGIS}/EDW_MTBS_01/MapServer`;
 
-/** IDS AREAS. Layer 0 is the point survey, which is coarser and not used. */
+/**
+ * Both survey layers, because damage is mapped as either.
+ *
+ * An observer sketches a damaged stand as a polygon when it is large enough to
+ * draw and drops a point on it when it is not, so the two layers hold
+ * different occurrences rather than two views of the same ones. Reading only
+ * the polygons reported no forest health damage over ground the survey had
+ * recorded: over a 0.17 by 0.07 degree area of Oregon on 2026-09-08 the areas
+ * layer held two groups, both 2025, while the points layer held thirty-six
+ * observations across 2024 and 2025, Douglas-fir beetle, fir engraver and root
+ * disease, so a 2024 pre window read as clean when it was not. The R workflows
+ * these checks came from plotted both.
+ */
 export const IDS_AREAS_LAYER = 1;
+export const IDS_POINTS_LAYER = 0;
 
 export const IDS_ATTRIBUTION =
   "USDA Forest Service, Forest Health Protection, Insect and Disease Survey";
@@ -74,12 +88,23 @@ export interface DamageGroup {
   agent: string;
   acres: number;
   records: number;
+  /** Trees counted, which only the point survey records. */
+  trees: number;
+  /** Whether the observer drew the damage or dropped a point on it. */
+  mapping: "area" | "point";
 }
 
 export interface IdsSummary {
   covered: boolean;
   groups: DamageGroup[];
   totalAcres: number;
+  /**
+   * Survey layers that did not answer.
+   *
+   * The damage they hold is missing from `groups`, so silence over the ground
+   * they map proves nothing. Empty on a clean read.
+   */
+  missing: Array<DamageGroup["mapping"]>;
 }
 
 /**
@@ -102,44 +127,162 @@ export async function insectAndDisease(
   signal?: AbortSignal,
 ): Promise<IdsSummary> {
   if (!withinUnitedStates(bbox)) {
-    return { covered: false, groups: [], totalAcres: 0 };
+    return { covered: false, groups: [], totalAcres: 0, missing: [] };
   }
-  if (years.length === 0) return { covered: true, groups: [], totalAcres: 0 };
+  if (years.length === 0)
+    return { covered: true, groups: [], totalAcres: 0, missing: [] };
 
-  const rows = await queryStats(`${IDS_SERVICE}/${IDS_AREAS_LAYER}`, {
-    where: `survey_year >= ${Math.min(...years)} AND survey_year <= ${Math.max(...years)}`,
-    bbox,
-    groupBy: ["survey_year", "damage_type", "dca_common_name"],
-    statistics: [
-      {
-        statisticType: "sum",
-        onStatisticField: "acres",
-        outStatisticFieldName: "total_acres",
-      },
-      {
-        statisticType: "count",
-        onStatisticField: "objectid",
-        outStatisticFieldName: "records",
-      },
-    ],
-    signal,
-  });
+  const where = `survey_year >= ${Math.min(...years)} AND survey_year <= ${Math.max(
+    ...years,
+  )} `.trim();
+  const groupBy = ["survey_year", "damage_type", "dca_common_name"];
+  const acres = {
+    statisticType: "sum",
+    onStatisticField: "acres",
+    outStatisticFieldName: "total_acres",
+  } as const;
+  const count = {
+    statisticType: "count",
+    onStatisticField: "objectid",
+    outStatisticFieldName: "records",
+  } as const;
 
-  const groups: DamageGroup[] = rows
-    .map((row) => ({
+  // One layer being down must not read as no damage.
+  //
+  // `Promise.all` rejects as soon as either layer does, which threw away the
+  // answer the other had already given and struck the whole survey off the
+  // search. Settling them apart keeps the half that answered and names the
+  // half that did not, so a verifier can see that the silence is the tool's
+  // and not the observer's. Both failing is still a failed read, and is
+  // thrown so the panel reports the survey as unavailable rather than empty.
+  const [areaSettled, pointSettled] = await Promise.allSettled([
+    queryStats(`${IDS_SERVICE}/${IDS_AREAS_LAYER}`, {
+      where,
+      bbox,
+      groupBy,
+      statistics: [acres, count],
+      signal,
+    }),
+    queryStats(`${IDS_SERVICE}/${IDS_POINTS_LAYER}`, {
+      where,
+      bbox,
+      groupBy,
+      statistics: [
+        acres,
+        count,
+        {
+          statisticType: "sum",
+          onStatisticField: "tree_count",
+          outStatisticFieldName: "total_trees",
+        },
+      ],
+      signal,
+    }),
+  ]);
+
+  if (areaSettled.status === "rejected" && pointSettled.status === "rejected") {
+    throw areaSettled.reason;
+  }
+
+  const areaRows = areaSettled.status === "fulfilled" ? areaSettled.value : [];
+  const pointRows =
+    pointSettled.status === "fulfilled" ? pointSettled.value : [];
+  const missing: Array<DamageGroup["mapping"]> = [
+    ...(areaSettled.status === "rejected" ? (["area"] as const) : []),
+    ...(pointSettled.status === "rejected" ? (["point"] as const) : []),
+  ];
+
+  const read = (
+    rows: Array<Record<string, unknown>>,
+    mapping: DamageGroup["mapping"],
+  ): DamageGroup[] =>
+    rows.map((row) => ({
       year: Number(row.survey_year ?? 0),
       damageType: String(row.damage_type ?? "unrecorded"),
       agent: String(row.dca_common_name ?? "unknown"),
       acres: Number(row.total_acres ?? 0),
       records: Number(row.records ?? 0),
-    }))
-    .filter((group) => group.acres > 0)
-    .sort((a, b) => b.acres - a.acres);
+      trees: Number(row.total_trees ?? 0),
+      mapping,
+    }));
+
+  // A point occurrence is kept even where the survey entered no acreage,
+  // because a dropped point is the record that an observer saw damage there,
+  // and dropping it for want of an area would put the tool back where it was.
+  const groups = [
+    ...read(areaRows, "area").filter((group) => group.acres > 0),
+    ...read(pointRows, "point").filter(
+      (group) => group.records > 0 || group.acres > 0,
+    ),
+  ].sort((a, b) => b.acres - a.acres || b.records - a.records);
 
   return {
     covered: true,
     groups,
     totalAcres: groups.reduce((total, group) => total + group.acres, 0),
+    missing,
+  };
+}
+
+export interface DamageGeometry {
+  areas: { type: "FeatureCollection"; features: unknown[] };
+  points: { type: "FeatureCollection"; features: unknown[] };
+}
+
+/**
+ * The survey's own shapes, for drawing beside the classified raster.
+ *
+ * The table says how many acres of fir engraver an observer recorded; it
+ * cannot say whether they recorded it over the stand the delta moved on or
+ * over the far side of the ownership. Only the geometry answers that, and
+ * without it a verifier reading a large acreage has no way to tell
+ * corroboration from coincidence. Every other registry in this section could
+ * be put on the map and this one could not.
+ *
+ * Areas and points are returned apart because they are drawn apart: a sketched
+ * polygon is a fill and a dropped point is a circle, and merging them would
+ * hide every point under the first polygon that overlapped it.
+ */
+export async function damageGeometry(
+  bbox: [number, number, number, number],
+  years: number[],
+  signal?: AbortSignal,
+): Promise<DamageGeometry> {
+  const empty = { type: "FeatureCollection" as const, features: [] as unknown[] };
+  if (!withinUnitedStates(bbox) || years.length === 0) {
+    return { areas: empty, points: empty };
+  }
+
+  const where = `survey_year >= ${Math.min(...years)} AND survey_year <= ${Math.max(
+    ...years,
+  )}`;
+  const outFields = ["survey_year", "damage_type", "dca_common_name", "acres"];
+
+  // Settled apart for the same reason the statistics are: one layer being down
+  // is a gap to report, not a reason to draw nothing.
+  const [areas, points] = await Promise.allSettled([
+    queryGeoJson(`${IDS_SERVICE}/${IDS_AREAS_LAYER}`, {
+      where,
+      bbox,
+      outFields,
+      // Sketch-mapped polygons carry more vertices than their accuracy earns,
+      // and they are drawn for position rather than measured.
+      simplify: 0.0002,
+      limit: 400,
+      signal,
+    }),
+    queryGeoJson(`${IDS_SERVICE}/${IDS_POINTS_LAYER}`, {
+      where,
+      bbox,
+      outFields: [...outFields, "tree_count"],
+      limit: 400,
+      signal,
+    }),
+  ]);
+
+  return {
+    areas: areas.status === "fulfilled" ? areas.value : empty,
+    points: points.status === "fulfilled" ? points.value : empty,
   };
 }
 
@@ -326,6 +469,26 @@ export async function fireEvidence(
   const sources: string[] = [];
   let yearsUnassessed: number[] = [];
 
+  // Stamp the registry onto the shape, not just onto the row.
+  //
+  // The three registries map the same fire differently and the whole reason to
+  // draw them is to see where they differ, but the features arrived here as an
+  // untagged pile and were handed to the map as one layer in one colour. The
+  // Bootleg Fire is in this feed twice, 167,425 hectares from the interagency
+  // perimeter and 167,307 from the severity assessment, so the two outlines
+  // fall within metres of each other and whichever drew second hid the first.
+  // A verifier looking for the operational perimeter saw the assessment and
+  // could not tell.
+  const tag = (source: FireSource, incoming: unknown[]) => {
+    for (const feature of incoming) {
+      const entry = feature as { properties?: Record<string, unknown> };
+      features.push({
+        ...(feature as object),
+        properties: { ...(entry.properties ?? {}), dc_source: source },
+      });
+    }
+  };
+
   const jobs: Array<Promise<void>> = [];
 
   if (coverage.unitedStates) {
@@ -343,7 +506,7 @@ export async function fireEvidence(
               cause: null,
             });
           }
-          features.push(...summary.perimeters.features);
+          tag("MTBS", summary.perimeters.features);
           yearsUnassessed = summary.yearsUnavailable;
           sources.push("MTBS");
         })
@@ -353,7 +516,7 @@ export async function fireEvidence(
       interagencyFires(bbox, years, signal)
         .then((found) => {
           records.push(...found.records);
-          features.push(...found.perimeters);
+          tag("NIFC", found.perimeters);
           sources.push("NIFC");
         })
         .catch(() => {}),
@@ -365,7 +528,7 @@ export async function fireEvidence(
       canadianFires(bbox, years, signal)
         .then((found) => {
           records.push(...found.records);
-          features.push(...found.perimeters);
+          tag("NBAC", found.perimeters);
           sources.push("NBAC");
         })
         .catch(() => {}),

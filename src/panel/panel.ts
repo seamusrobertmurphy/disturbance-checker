@@ -21,11 +21,17 @@ import {
 } from "../analysis/run";
 import { describeClimateError, describeError } from "../errors";
 import { CLOUD_MASKS } from "../raster/mask";
-import { gridCornersLonLat } from "../raster/grid";
+import {
+  gridCornersLonLat,
+  gridForBounds,
+  utmEpsgForLonLat,
+  type TargetGrid,
+} from "../raster/grid";
 import {
   IDS_ATTRIBUTION,
   MTBS_ATTRIBUTION,
   coverageFor,
+  damageGeometry,
   fireEvidence,
   insectAndDisease,
   managementRecord,
@@ -92,6 +98,9 @@ import {
   defaultBreaks,
   isReadyToRun,
 } from "../state";
+import deltasSource from "../analysis/deltas.ts?raw";
+import compositeSource from "../raster/composite.ts?raw";
+import maskSource from "../raster/mask.ts?raw";
 import { GeoLibreAppAPI } from "../types/geolibre";
 import {
   button,
@@ -158,6 +167,9 @@ export class DisturbancePanel {
    * layer, not a parameter of the run. */
   private landfireLegend: Array<{ label: string; swatch: string }> = [];
   private open: Set<string>;
+  /** Whether the imagery and index source is expanded. Cosmetic, not a
+   * parameter of the run, so it is held outside state. */
+  private showCode = false;
   private readonly layers: MapLayerManager;
   /** The climate request in flight, so a change of area cancels it. */
   private climateAbort: AbortController | null = null;
@@ -723,6 +735,37 @@ export class DisturbancePanel {
 
   // Section 1 ---------------------------------------------------------------
 
+
+  /**
+   * The code that turned the imagery into the numbers on screen.
+   *
+   * Imported from the running files rather than retyped, so it cannot drift
+   * from what produced the result. Every constant in the SOP traces to source
+   * a reader can check, and asking them to clone a repository to do it put the
+   * check out of reach of the people who most need it.
+   */
+  private renderCode(): HTMLElement {
+    const body = el("div", "dc-stack");
+    body.appendChild(
+      el(
+        "p",
+        "dc-hint",
+        "These are the files this page is running, not a copy of them. Compositing and masking turn the scenes into one image per window; the indices and their differences turn that into the numbers in section 6.",
+      ),
+    );
+    for (const [name, source] of [
+      ["src/raster/composite.ts", compositeSource],
+      ["src/raster/mask.ts", maskSource],
+      ["src/analysis/deltas.ts", deltasSource],
+    ] as Array<[string, string]>) {
+      body.appendChild(el("div", "dc-subhead", name));
+      const pre = el("pre", "dc-code");
+      pre.textContent = source;
+      body.appendChild(pre);
+    }
+    return body;
+  }
+
   private renderSource(): HTMLElement {
     const body = el("div", "dc-stack");
 
@@ -816,6 +859,22 @@ export class DisturbancePanel {
             "The weights download once, then stay in the browser cache. Use a browser with WebGPU: measured in Chrome 151, one block through both models takes 0.26 seconds on WebGPU and 6.3 seconds without it, and the run manifest records which one you got. Snow, saturated and no-data pixels still come from the scene classification, which is authoritative about all three.",
           ),
     );
+
+    // Nothing about the arithmetic is hidden, so the code that does it is one
+    // click away rather than a repository clone away.
+    const codeRow = el("div", "dc-row");
+    codeRow.appendChild(
+      button(
+        this.showCode ? "Hide the code" : "Show the code",
+        () => {
+          this.showCode = !this.showCode;
+          this.rerender();
+        },
+        "secondary",
+      ),
+    );
+    body.appendChild(codeRow);
+    if (this.showCode) body.appendChild(this.renderCode());
 
     return body;
   }
@@ -2127,7 +2186,7 @@ export class DisturbancePanel {
       }
     }
 
-    body.appendChild(el("div", "dc-subhead", "Insect and disease survey"));
+    body.appendChild(el("div", "dc-subhead", "Forest health survey"));
     // Three different empties, which mean three different things.
     //
     // A query that failed, an area the survey never flew, and a surveyed area
@@ -2140,8 +2199,8 @@ export class DisturbancePanel {
       body.appendChild(
         this.notice(
           "warning",
-          "The survey was not read",
-          `This search could not read the aerial insect and disease survey (${idsFailed.reason}), so nothing is known either way about insect or disease damage over this area. Search again; do not record this as an absence.`,
+          "The forest health survey was not read",
+          `This search could not read the aerial forest health survey (${idsFailed.reason}), so nothing is known either way about pest or disease damage over this area. Search again; do not record this as an absence.`,
         ),
       );
     } else if (!held.ids.covered) {
@@ -2149,7 +2208,7 @@ export class DisturbancePanel {
         this.notice(
           "info",
           "Outside the surveyed area",
-          "The aerial insect and disease survey covers the United States only, so nothing was asked about this area. That is an absence of jurisdiction, not an absence of damage.",
+          "The aerial forest health survey covers the United States only, so nothing was asked about this area. That is an absence of jurisdiction, not an absence of damage.",
         ),
       );
     } else if (held.ids.groups.length === 0) {
@@ -2161,23 +2220,60 @@ export class DisturbancePanel {
         ),
       );
     } else {
+      // A quarter of an acre is not nothing, and rounding it to a whole number
+      // printed "0 ac" against a point an observer had actually recorded,
+      // which is the one reading this section exists to prevent. Below ten
+      // acres the figure keeps a decimal.
+      const acreage = (value: number) =>
+        value >= 10 ? Math.round(value).toLocaleString() : value.toFixed(1);
+
       const table = el("div", "dc-damage");
-      for (const group of held.ids.groups.slice(0, 12)) {
+      for (const group of held.ids.groups.slice(0, 16)) {
         const row = el("div", "dc-damage-row");
         row.appendChild(el("span", "dc-damage-year", String(group.year)));
         row.appendChild(el("span", "dc-damage-agent", group.agent));
         row.appendChild(el("span", "dc-damage-type", group.damageType));
-        row.appendChild(
-          el("span", "dc-damage-acres", `${Math.round(group.acres).toLocaleString()} ac`),
-        );
+        // A drawn stand is reported in acres; a dropped point is reported as
+        // what it is, an observation, with its tree count where one was
+        // entered.
+        const measure =
+          group.mapping === "area"
+            ? `${acreage(group.acres)} ac`
+            : group.acres > 0
+              ? `${group.records} pt · ${acreage(group.acres)} ac`
+              : group.trees > 0
+                ? `${group.records} pt · ${Math.round(group.trees).toLocaleString()} trees`
+                : `${group.records} pt`;
+        row.appendChild(el("span", "dc-damage-acres", measure));
         table.appendChild(row);
       }
       body.appendChild(table);
       body.appendChild(
+        button("Show damage", () => void this.showDamage(), "secondary"),
+      );
+      body.appendChild(
         el(
           "p",
           "dc-hint",
-          "Acres are the survey's own figures. The polygons are sketch-mapped from an aircraft, so their areas are approximate by construction and are not recomputed here.",
+          "Rows marked ac are stands the observer drew; rows marked pt are points they dropped where the damage was too small to draw. Both are the survey's own figures, sketch-mapped from an aircraft and approximate by construction, and are not recomputed here. Show damage draws the same records on the map, so the acreage can be read against the stand the delta moved on.",
+        ),
+      );
+    }
+
+    // Half the survey answering is neither a full read nor a failed one, and
+    // was previously indistinguishable from both.
+    if (held.ids.missing.length > 0) {
+      const layer =
+        held.ids.missing[0] === "area"
+          ? "the sketched stands"
+          : "the observation points";
+      body.appendChild(
+        this.notice(
+          "warning",
+          "Only part of the survey was read",
+          held.ids.missing.length === 2
+            ? "Neither survey layer answered, so nothing above comes from the aerial survey."
+            : `The survey answered for one of its two layers but not for ${layer}, so any damage mapped that way is missing from the table above. Search again before citing this as an absence.`,
         ),
       );
     }
@@ -2276,12 +2372,45 @@ export class DisturbancePanel {
    * publishes one raster per disturbance year, so showing any year but the one
    * the delta attributes its change to would be comparing different questions.
    */
+  /**
+   * The footprint a corroborating overlay is drawn on.
+   *
+   * The run's own grid where a run has finished, because an overlay compared
+   * against the classified raster must land on the same pixels. Before a run
+   * there is no such grid, and both overlay buttons read `results[0]` and
+   * returned when it was undefined, silently: the corroboration section is
+   * usable as soon as an area is set, so an operator who had not yet run the
+   * check clicked "Show disturbance cause" and nothing happened, no layer and
+   * no message. The area of interest is enough to draw over, so it is used.
+   */
+  private overlayGrid(): TargetGrid | null {
+    const held = this.state.results[0];
+    if (held) return held.grid;
+    const aoi = this.state.aoi;
+    const bounds = aoi ? aoiBounds(aoi) : null;
+    if (!bounds) return null;
+    return gridForBounds(
+      utmEpsgForLonLat(
+        (bounds.west + bounds.east) / 2,
+        (bounds.south + bounds.north) / 2,
+      ),
+      bounds,
+    );
+  }
+
   private async showLandfire(): Promise<void> {
-    const result = this.state.results[0];
     const period = this.state.periods[0];
     const bbox = this.aoiBbox();
     const region = bbox ? regionFor(bbox) : null;
-    if (!result || !period || !region) return;
+    const grid = this.overlayGrid();
+    if (!period || !region) return;
+    if (!grid) {
+      this.patch({
+        referenceError:
+          "There is no area to draw over. Set an area of interest in section 2 first.",
+      });
+      return;
+    }
 
     const year = Number(period.postEnd.slice(0, 4));
     try {
@@ -2311,7 +2440,7 @@ export class DisturbancePanel {
           referenceError: `LANDFIRE has not published ${year} yet, so the ${service.year} disturbance product is drawn instead. It lags the calendar by a year or more, and an absent product is not an absence of disturbance.`,
         });
       }
-      const overlay = await overlayFor(result.grid, service);
+      const overlay = await overlayFor(grid, service);
       this.landfireLegend = overlay.legend;
       this.layers.addRaster({
         key: "ref-landfire",
@@ -2328,14 +2457,21 @@ export class DisturbancePanel {
   }
 
   private async showLcms(productId: string): Promise<void> {
-    const result = this.state.results[0];
     const period = this.state.periods[0];
     const product = LCMS_PRODUCTS.find((entry) => entry.id === productId);
-    if (!result || !period || !product) return;
+    const grid = this.overlayGrid();
+    if (!period || !product) return;
+    if (!grid) {
+      this.patch({
+        referenceError:
+          "There is no area to draw over. Set an area of interest in section 2 first.",
+      });
+      return;
+    }
 
     const year = Number(period.postEnd.slice(0, 4));
     try {
-      const overlay = await exportOverlay({ product, year, grid: result.grid });
+      const overlay = await exportOverlay({ product, year, grid });
       this.layers.addRaster({
         key: "ref-lcms",
         name: `LCMS ${product.label}, ${year}`,
@@ -2418,7 +2554,7 @@ export class DisturbancePanel {
     };
 
     const unavailable = [
-      describeSource("ids", "the aerial insect and disease survey", idsResult),
+      describeSource("ids", "the aerial forest health survey", idsResult),
       describeSource("fire", "the fire registries", firesResult),
       describeSource("management", "the Forest Service activity record", managementResult),
     ].filter((entry): entry is NonNullable<typeof entry> => entry !== null);
@@ -2439,7 +2575,7 @@ export class DisturbancePanel {
         ids:
           idsResult.status === "fulfilled"
             ? idsResult.value
-            : { covered: false, groups: [], totalAcres: 0 },
+            : { covered: false, groups: [], totalAcres: 0, missing: [] },
         fires:
           firesResult.status === "fulfilled"
             ? firesResult.value
@@ -2460,17 +2596,109 @@ export class DisturbancePanel {
     });
   }
 
+  /**
+   * One layer per fire registry, drawn in its own colour.
+   *
+   * All three registries went into a single red layer called "Mapped fire
+   * perimeters", which is unreadable exactly where it matters: the interagency
+   * perimeter and the severity assessment of the same fire fall within metres
+   * of each other, so the second one drawn covered the first and a verifier
+   * could not see which registry they were looking at. Over the 2021 Bootleg
+   * Fire that is a 167,425 hectare operational perimeter hidden under a
+   * 167,307 hectare assessment. Separating them also lets one be switched off
+   * in the layer panel, which is the only way to compare two outlines that
+   * nearly coincide.
+   */
   private showPerimeters(): void {
     const held = this.state.corroboration;
     if (!held || held.fires.perimeters.features.length === 0) return;
-    this.layers.addVector({
-      key: "ref-fire",
-      name: "Mapped fire perimeters",
-      geojson: held.fires.perimeters,
-      role: "fire",
-      labelField: null,
-      color: "#d7301f",
-    });
+
+    // The single combined layer earlier versions drew, so a session that
+    // already has it on the map does not end up with the fires twice.
+    this.layers.remove("tuvsud-dc-ref-fire");
+
+    const palette: Record<string, { color: string; name: string }> = {
+      MTBS: { color: "#d7301f", name: "Fire, severity assessment (MTBS)" },
+      NIFC: { color: "#fdae61", name: "Fire, operational perimeter (NIFC)" },
+      NBAC: { color: "#7f0000", name: "Fire, burned area composite (NBAC)" },
+    };
+
+    const bySource = new Map<string, unknown[]>();
+    for (const feature of held.fires.perimeters.features) {
+      const source = String(
+        (feature as { properties?: Record<string, unknown> }).properties
+          ?.dc_source ?? "MTBS",
+      );
+      const bucket = bySource.get(source);
+      if (bucket) bucket.push(feature);
+      else bySource.set(source, [feature]);
+    }
+
+    for (const [source, features] of bySource) {
+      const style = palette[source] ?? {
+        color: "#d7301f",
+        name: `Mapped fire (${source})`,
+      };
+      this.layers.addVector({
+        key: `ref-fire-${source.toLowerCase()}`,
+        name: style.name,
+        geojson: { type: "FeatureCollection", features },
+        role: "fire",
+        labelField: null,
+        color: style.color,
+      });
+    }
+  }
+
+  /**
+   * The aerial survey's own damage shapes, over the same ground as the raster.
+   *
+   * The table below the button says an observer recorded thirteen thousand
+   * acres of western pine beetle mortality; it cannot say whether they recorded
+   * it over the stand the delta moved on. Every other registry in this section
+   * could be put on the map and this one could not, which left the one dataset
+   * that names a cause as the only one a verifier had to take on trust.
+   */
+  private async showDamage(): Promise<void> {
+    const bbox = this.aoiBbox();
+    const held = this.state.corroboration;
+    if (!bbox || !held) return;
+
+    try {
+      const shapes = await damageGeometry(bbox, held.years);
+      if (
+        shapes.areas.features.length === 0 &&
+        shapes.points.features.length === 0
+      ) {
+        this.patch({
+          referenceError:
+            "The survey returned no damage shapes over this area for these years. That is the survey's own silence, not a failed request.",
+        });
+        return;
+      }
+      if (shapes.areas.features.length > 0) {
+        this.layers.addVector({
+          key: "ref-ids-areas",
+          name: "Forest health survey, sketched stands",
+          geojson: shapes.areas,
+          role: "damage",
+          labelField: null,
+          color: "#6a51a3",
+        });
+      }
+      if (shapes.points.features.length > 0) {
+        this.layers.addVector({
+          key: "ref-ids-points",
+          name: "Forest health survey, observation points",
+          geojson: shapes.points,
+          role: "damage-point",
+          labelField: null,
+          color: "#9e9ac8",
+        });
+      }
+    } catch (error) {
+      this.patch({ referenceError: describeError(error) });
+    }
   }
 
   /**
