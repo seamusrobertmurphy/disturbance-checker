@@ -169,7 +169,13 @@ export class DisturbancePanel {
     } catch {
       // Fall through to the default.
     }
-    return ["project", "aoi", "period"];
+    // Everything closed on a first visit.
+    //
+    // Nine sections opened at once is a wall of controls, and a reader who has
+    // not met the tool cannot tell which of them they are meant to touch. They
+    // open on a click and the choice is remembered for the session, so this
+    // costs a returning operator nothing.
+    return [];
   }
 
   private saveOpenSections(): void {
