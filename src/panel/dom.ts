@@ -48,6 +48,101 @@ export function input(
   return node;
 }
 
+/**
+ * A date typed as YYYY-MM-DD, not a native picker.
+ *
+ * The native control splits the value into three segments and gives the year
+ * the narrowest one, so changing 2024 to 2019, which is most of what anyone
+ * does here, meant clicking a four-character target and then arrowing or
+ * overtyping it. A plain text field in ISO order puts the year first, where
+ * select-all and four keystrokes replaces it.
+ *
+ * The value is only reported once it parses and round-trips, so a half-typed
+ * date cannot reach the analysis; until then the field is marked invalid and
+ * left alone.
+ */
+export function dateInput(
+  value: string,
+  onChange: (value: string) => void,
+): HTMLInputElement {
+  const node = el("input", "dc-input dc-input-date");
+  node.type = "text";
+  node.value = value;
+  node.placeholder = "YYYY-MM-DD";
+  node.inputMode = "numeric";
+  node.autocomplete = "off";
+  node.spellcheck = false;
+  node.setAttribute("aria-label", "Date, four-digit year, month, day");
+
+  const settle = () => {
+    const text = node.value.trim();
+    if (isIsoDate(text)) {
+      node.removeAttribute("aria-invalid");
+      node.classList.remove("dc-input-invalid");
+      if (text !== value) onChange(text);
+    } else {
+      node.setAttribute("aria-invalid", "true");
+      node.classList.add("dc-input-invalid");
+    }
+  };
+  node.addEventListener("change", settle);
+  node.addEventListener("blur", settle);
+  return node;
+}
+
+/** The same month and day, in another year. */
+export function withYear(iso: string, year: number): string {
+  return `${String(year).padStart(4, "0")}${iso.slice(4)}`;
+}
+
+/**
+ * How many new years a window crosses, usually none.
+ *
+ * A window running 1 August to 1 September stays inside its year and returns
+ * zero. One running 15 December to 15 January returns one, so moving the start
+ * year carries the end date with it instead of folding the window shut.
+ */
+export function spanYears(start: string, end: string): number {
+  return Number(end.slice(0, 4)) - Number(start.slice(0, 4));
+}
+
+/** True when the text is a real calendar date in YYYY-MM-DD. */
+export function isIsoDate(text: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const date = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text;
+}
+
+/**
+ * A year the operator steps or types, which moves a whole window at once.
+ *
+ * A reporting period is nearly always the same fortnight in two different
+ * years, so the year is the field that actually changes and the month and day
+ * are the ones that stay. Editing it once per window rather than once per date
+ * halves the typing and removes the commonest slip, a pre window moved to the
+ * new year while its end date is left in the old one.
+ */
+export function yearInput(
+  value: number,
+  onChange: (year: number) => void,
+): HTMLInputElement {
+  const node = el("input", "dc-input dc-input-year");
+  node.type = "number";
+  node.min = "2015";
+  node.max = String(new Date().getUTCFullYear() + 1);
+  node.step = "1";
+  node.value = String(value);
+  node.addEventListener("change", () => {
+    const year = Number(node.value);
+    if (Number.isInteger(year) && year >= 2015 && year <= Number(node.max)) {
+      if (year !== value) onChange(year);
+    } else {
+      node.value = String(value);
+    }
+  });
+  return node;
+}
+
 export function select(
   options: Array<{ value: string; label: string }>,
   value: string,

@@ -21,7 +21,12 @@ interface MapLibreLike {
   once?: (event: string, handler: () => void) => void;
 }
 
-export type VectorRole = "boundary" | "smz" | "plots" | "fire";
+export type VectorRole =
+  | "boundary"
+  | "smz"
+  | "plots"
+  | "harvest"
+  | "fire";
 
 export interface ManagedLayer {
   id: string;
@@ -391,7 +396,12 @@ export class MapLayerManager {
                 // A fire perimeter is evidence to read the analysis against,
                 // so it is drawn heavier than a context outline but still
                 // light enough to see the classified raster through.
-                "fill-opacity": options.role === "smz" ? 0.18 : 0.22,
+                "fill-opacity":
+                  options.role === "smz"
+                    ? 0.18
+                    : options.role === "harvest"
+                      ? 0.12
+                      : 0.22,
               },
             });
           }
@@ -403,7 +413,13 @@ export class MapLayerManager {
               "line-color": options.color,
               "line-width": options.role === "boundary" ? 2.5 : 1.5,
               "line-dasharray":
-                options.role === "smz" ? [3, 2] : options.role === "fire" ? [4, 2] : [1, 0],
+                options.role === "smz"
+                  ? [3, 2]
+                  : options.role === "fire"
+                    ? [4, 2]
+                    : options.role === "harvest"
+                      ? [6, 3]
+                      : [1, 0],
             },
           });
           if (options.role !== "boundary") nativeLayerIds.push(fillId);

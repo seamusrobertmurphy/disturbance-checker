@@ -25,7 +25,7 @@ export type RunStatus =
   | "stale"
   | "error";
 
-export type ContextRole = "boundary" | "smz" | "plots";
+export type ContextRole = "boundary" | "smz" | "plots" | "harvest";
 
 export interface ContextLayer {
   /** Original file name, so the operator can see what they loaded. */
@@ -165,7 +165,7 @@ export function createState(): State {
     maskId: DEFAULT_MASK_ID,
     maskOptions: { ...DEFAULT_MASK_OPTIONS },
 
-    context: { boundary: null, smz: null, plots: null },
+    context: { boundary: null, smz: null, plots: null, harvest: null },
 
     breaks: defaultBreaks(),
     justifications: { dNDVI: "", dNDMI: "", dNBR: "" },
@@ -279,6 +279,7 @@ export function toPersisted(state: State): PersistedState {
       boundary: persistContext(state.context.boundary),
       smz: persistContext(state.context.smz),
       plots: persistContext(state.context.plots),
+      harvest: persistContext(state.context.harvest),
     },
   };
 }
@@ -306,6 +307,7 @@ export function fromPersisted(state: State, raw: unknown): State {
       boundary: persisted.context?.boundary ?? null,
       smz: persisted.context?.smz ?? null,
       plots: persisted.context?.plots ?? null,
+      harvest: persisted.context?.harvest ?? null,
     },
     status: "idle",
     results: [],

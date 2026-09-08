@@ -149,8 +149,8 @@ assert.deepEqual(
 const withContext = plugin.getProjectState();
 assert.deepEqual(
   Object.keys(withContext.context).sort(),
-  ["boundary", "plots", "smz"],
-  "project state must carry all three site data slots",
+  ["boundary", "harvest", "plots", "smz"],
+  "project state must carry all four site data slots",
 );
 withContext.context.plots = {
   name: "plots.zip",

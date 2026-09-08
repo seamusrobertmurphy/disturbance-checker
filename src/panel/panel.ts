@@ -92,7 +92,20 @@ import {
   isReadyToRun,
 } from "../state";
 import { GeoLibreAppAPI } from "../types/geolibre";
-import { button, clear, el, field, formatDuration, formatHectares, input, select } from "./dom";
+import {
+  button,
+  clear,
+  dateInput,
+  el,
+  field,
+  formatDuration,
+  formatHectares,
+  input,
+  select,
+  spanYears,
+  withYear,
+  yearInput,
+} from "./dom";
 import { renderHistogramPlot } from "./histogram-plot";
 import { mountClimographPanel, yearColour } from "./climograph-plot";
 
@@ -126,6 +139,11 @@ const CONTEXT_META: Record<
     label: "Plot points",
     colour: "#facc15",
     hint: "Each point is labelled with its plot identifier so screenshots can be oriented.",
+  },
+  harvest: {
+    label: "Reported harvest",
+    colour: "#c084fc",
+    hint: "The harvest the developer reported, drawn as a dashed outline. Never an input: a detected polygon that falls inside it is reported harvest behaving as it should, and one that falls outside it is the finding.",
   },
 };
 
@@ -525,7 +543,21 @@ export class DisturbancePanel {
       el(
         "p",
         "dc-hint",
-        "Zipped shapefile, GeoJSON, or KML. Files are read in the browser and never uploaded anywhere.",
+        "GeoJSON and KML upload as the single file they are. A shapefile does not: it is a set of files that only mean something together, and a browser can only take one, so select the whole set and compress it into one .zip first, then upload that.",
+      ),
+    );
+    body.appendChild(
+      this.notice(
+        "info",
+        "Put the .prj in the zip",
+        "The .shp holds the shapes and the .prj says which projection they are in. Without it there is nothing to convert from, so the coordinates are read as plain degrees and a Montana project lands off the coast of west Africa. A boundary that appears in the wrong hemisphere means the .prj was left out. Include .shp, .shx, .dbf and .prj at least; zip the folder rather than picking files one by one and none can be missed.",
+      ),
+    );
+    body.appendChild(
+      el(
+        "p",
+        "dc-hint",
+        "Nothing is uploaded anywhere. Every file is read inside this browser tab.",
       ),
     );
 
@@ -938,11 +970,43 @@ export class DisturbancePanel {
       }
       card.appendChild(head);
 
+      // The year first, because it is what changes.
+      //
+      // A reporting period is the same fortnight in two different years, so
+      // the year carries the edit and the month and day carry the season.
+      // Setting it here moves both dates of that window together, which is
+      // what the operator meant, and the dates below stay editable for a
+      // window that genuinely straddles the new year.
+      const years = el("div", "dc-grid-2");
+      years.appendChild(
+        field(
+          "Pre year",
+          yearInput(Number(period.preStart.slice(0, 4)), (year) =>
+            this.updatePeriod(index, {
+              preStart: withYear(period.preStart, year),
+              preEnd: withYear(period.preEnd, year + spanYears(period.preStart, period.preEnd)),
+            }),
+          ),
+        ),
+      );
+      years.appendChild(
+        field(
+          "Post year",
+          yearInput(Number(period.postStart.slice(0, 4)), (year) =>
+            this.updatePeriod(index, {
+              postStart: withYear(period.postStart, year),
+              postEnd: withYear(period.postEnd, year + spanYears(period.postStart, period.postEnd)),
+            }),
+          ),
+        ),
+      );
+      card.appendChild(years);
+
       const grid = el("div", "dc-grid-2");
       grid.appendChild(
         field(
           "Pre start",
-          input("date", period.preStart, (value) =>
+          dateInput(period.preStart, (value) =>
             this.updatePeriod(index, { preStart: value }),
           ),
         ),
@@ -950,7 +1014,7 @@ export class DisturbancePanel {
       grid.appendChild(
         field(
           "Pre end",
-          input("date", period.preEnd, (value) =>
+          dateInput(period.preEnd, (value) =>
             this.updatePeriod(index, { preEnd: value }),
           ),
         ),
@@ -958,7 +1022,7 @@ export class DisturbancePanel {
       grid.appendChild(
         field(
           "Post start",
-          input("date", period.postStart, (value) =>
+          dateInput(period.postStart, (value) =>
             this.updatePeriod(index, { postStart: value }),
           ),
         ),
@@ -966,12 +1030,19 @@ export class DisturbancePanel {
       grid.appendChild(
         field(
           "Post end",
-          input("date", period.postEnd, (value) =>
+          dateInput(period.postEnd, (value) =>
             this.updatePeriod(index, { postEnd: value }),
           ),
         ),
       );
       card.appendChild(grid);
+      card.appendChild(
+        el(
+          "p",
+          "dc-hint",
+          "Dates are typed as YYYY-MM-DD. Setting a year moves both dates of that window and keeps the month and day, so the two windows stay at the same point of the season.",
+        ),
+      );
 
       for (const diagnostic of checkPeriod(period)) {
         card.appendChild(

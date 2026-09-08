@@ -251,6 +251,21 @@ select.dc-input {
   outline-offset: -1px;
 }
 
+.dc-input-date {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.dc-input-year {
+  font-variant-numeric: tabular-nums;
+}
+
+.dc-input-invalid,
+.dc-input-invalid:focus {
+  border-color: var(--dc-danger, #d7301f);
+  outline-color: var(--dc-danger, #d7301f);
+}
+
 .dc-input-inline {
   width: auto;
   max-width: 90px;
