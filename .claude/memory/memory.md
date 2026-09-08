@@ -7,3 +7,4 @@
 - `general.md` also carries the 2026-09-06 browser render findings: the first real WebGPU render of SEN2SRLite, its measured per-tile cost against the read cost, and the seam check.
 - `general.md` also carries the 2026-09-06 visualisation and atmosphere findings: the two SOPs' disagreeing RGB stretch, the measured clipping, the model's brightness neutrality, the absent cirrus band, and why AOT and WVP are reported rather than masked on.
 - `general.md` also carries the 2026-09-06 host-app and harness notes: GeoLibre's toolbar project path and its deploy-time patch, and the recipe for running plugin code against real imagery in headless Chrome.
+- `general.md` also carries the 2026-09-08 corroboration findings: the USGS HeadlessChrome block that faked a LANDFIRE outage, and the panel harness that found the four faults `tsc` could not.
