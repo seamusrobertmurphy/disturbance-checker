@@ -99,6 +99,8 @@ onto the build env, but the Earth Engine files call their own
 the web build. Earth Engine itself takes no API key; GeoLibre's only Google
 key, `VITE_GOOGLE_MAPS_API_KEY`, is for Street View and Google Traffic.
 
+2026-09-10: a harness page must set `*, *::before, *::after { box-sizing: border-box; }` and `<html class="dark">` on a `rgb(13, 17, 22)` ground to match the guide figures, because GeoLibre sets border-box globally and without it every `width: 100%` input adds its padding and the panel runs about 16 px past 400, cutting "30 %" on the cloud slider. It matters because the first capture of figS1 to figS4 for 28fb700 was clipped that way and looked fine at a glance.
+
 ## Deploy check
 
 2026-09-10: a deploy is confirmed by fetching the published bundle at `<site>/plugins/<plugin id>/dist/index.js` with a `?v=<epoch>` query and searching it for the changed text, because Pages serves it with `cache-control: max-age=600` and a plain fetch a minute after run 34521081130 succeeded still returned the old `"Pre year"` bundle; `gh run list -c` also matched nothing on the short SHA `cf0cc73`, so filter by the full SHA or not at all. It matters because both traps make a good deploy look failed.

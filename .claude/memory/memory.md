@@ -9,4 +9,5 @@
 - `general.md` also carries the 2026-09-06 host-app and harness notes: GeoLibre's toolbar project path and its deploy-time patch, and the recipe for running plugin code against real imagery in headless Chrome.
 - `general.md` also carries the 2026-09-08 corroboration findings: the USGS HeadlessChrome block that faked a LANDFIRE outage, and the panel harness that found the four faults `tsc` could not.
 - `general.md` also carries the 2026-09-08 Earth Engine sign-in finding: opengeos's fallback client id, the origin mismatch it returns, and the one build variable that overrides it.
+- `general.md` also carries the 2026-09-10 harness sizing rule: global border-box and the dark ground, or the guide figures clip at the right edge.
 - `general.md` also carries the 2026-09-10 deploy check: the published bundle path, the ten-minute Pages cache that shows a stale bundle, and the short-SHA filter that finds no run.
