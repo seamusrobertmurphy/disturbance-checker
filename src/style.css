@@ -429,6 +429,16 @@ select.dc-input {
   border-radius: 5px;
 }
 
+.dc-window {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px;
+  border: 1px solid var(--dc-border);
+  border-radius: 5px;
+  min-width: 0;
+}
+
 .dc-period-head {
   display: flex;
   align-items: center;

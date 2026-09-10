@@ -1033,77 +1033,17 @@ export class DisturbancePanel {
       }
       card.appendChild(head);
 
-      // The year first, because it is what changes.
-      //
-      // A reporting period is the same fortnight in two different years, so
-      // the year carries the edit and the month and day carry the season.
-      // Setting it here moves both dates of that window together, which is
-      // what the operator meant, and the dates below stay editable for a
-      // window that genuinely straddles the new year.
-      const years = el("div", "dc-grid-2");
-      years.appendChild(
-        field(
-          "Pre year",
-          yearInput(Number(period.preStart.slice(0, 4)), (year) =>
-            this.updatePeriod(index, {
-              preStart: withYear(period.preStart, year),
-              preEnd: withYear(period.preEnd, year + spanYears(period.preStart, period.preEnd)),
-            }),
-          ),
-        ),
-      );
-      years.appendChild(
-        field(
-          "Post year",
-          yearInput(Number(period.postStart.slice(0, 4)), (year) =>
-            this.updatePeriod(index, {
-              postStart: withYear(period.postStart, year),
-              postEnd: withYear(period.postEnd, year + spanYears(period.postStart, period.postEnd)),
-            }),
-          ),
-        ),
-      );
-      card.appendChild(years);
-
-      const grid = el("div", "dc-grid-2");
-      grid.appendChild(
-        field(
-          "Pre start",
-          dateInput(period.preStart, (value) =>
-            this.updatePeriod(index, { preStart: value }),
-          ),
-        ),
-      );
-      grid.appendChild(
-        field(
-          "Pre end",
-          dateInput(period.preEnd, (value) =>
-            this.updatePeriod(index, { preEnd: value }),
-          ),
-        ),
-      );
-      grid.appendChild(
-        field(
-          "Post start",
-          dateInput(period.postStart, (value) =>
-            this.updatePeriod(index, { postStart: value }),
-          ),
-        ),
-      );
-      grid.appendChild(
-        field(
-          "Post end",
-          dateInput(period.postEnd, (value) =>
-            this.updatePeriod(index, { postEnd: value }),
-          ),
-        ),
-      );
-      card.appendChild(grid);
+      // One panel per window, the start window on the left and the end window
+      // on the right, each holding its year above its two dates.
+      const windows = el("div", "dc-grid-2");
+      windows.appendChild(this.renderWindow(index, "Start", "preStart", "preEnd"));
+      windows.appendChild(this.renderWindow(index, "End", "postStart", "postEnd"));
+      card.appendChild(windows);
       card.appendChild(
         el(
           "p",
           "dc-hint",
-          "Dates are typed as YYYY-MM-DD. Setting a year moves both dates of that window and keeps the month and day, so the two windows stay at the same point of the season.",
+          "Dates are typed as YYYY-MM-DD. Date A opens a window and Date B closes it. Setting a year moves both dates in its panel and keeps the month and day, so the two windows stay at the same point of the season.",
         ),
       );
 
@@ -1419,6 +1359,50 @@ export class DisturbancePanel {
         climateError: describeClimateError(error),
       });
     }
+  }
+
+  /**
+   * One window of a reporting period, its year above its two dates.
+   *
+   * A reporting period is the same fortnight in two different years, so the
+   * year carries the edit and the month and day carry the season. Setting the
+   * year moves both dates of the window together, and the dates stay editable
+   * for a window that straddles the new year.
+   */
+  private renderWindow(
+    index: number,
+    name: "Start" | "End",
+    openKey: "preStart" | "postStart",
+    closeKey: "preEnd" | "postEnd",
+  ): HTMLElement {
+    const period = this.state.periods[index];
+    const open = period[openKey];
+    const close = period[closeKey];
+    const panel = el("div", "dc-window");
+    panel.appendChild(
+      field(
+        `${name} Year`,
+        yearInput(Number(open.slice(0, 4)), (year) =>
+          this.updatePeriod(index, {
+            [openKey]: withYear(open, year),
+            [closeKey]: withYear(close, year + spanYears(open, close)),
+          }),
+        ),
+      ),
+    );
+    panel.appendChild(
+      field(
+        `${name} Date A`,
+        dateInput(open, (value) => this.updatePeriod(index, { [openKey]: value })),
+      ),
+    );
+    panel.appendChild(
+      field(
+        `${name} Date B`,
+        dateInput(close, (value) => this.updatePeriod(index, { [closeKey]: value })),
+      ),
+    );
+    return panel;
   }
 
   private updatePeriod(index: number, patch: Partial<Period>): void {
