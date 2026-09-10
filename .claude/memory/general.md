@@ -78,3 +78,27 @@
 2026-09-08: USGS blocks any request whose User-Agent carries the token `HeadlessChrome` at both `lfps.usgs.gov` and `edcintl.cr.usgs.gov`, returning HTTP 500 and a Barracuda page reading "Web Page Blocked! ... Attack ID: 20000051" with no `access-control-allow-origin`, so a page fetch reads it as `Failed to fetch`. Isolated by replaying Chrome's captured headers one at a time with curl: the UA alone triggers it and `Chrome/152` in place of `HeadlessChrome/152` passes. It matters because it produced a false LANDFIRE outage in the headless harness, and every headless run against a USGS host must pass `--user-agent` with an ordinary Chrome string.
 
 2026-09-08: the panel itself is exercised by loading `dist/index.js` into a one-file page that stubs `registerRightPanel`, records `addSource` and `addLayer` on a fake map instead of drawing, calls `applyProjectState` with an AOI and periods, then clicks its way through and writes the transcript into a `<pre>` read back with `--dump-dom`. Sections render closed since 7899be6, so section 8 must be clicked before any corroboration button exists. It matters because the four corroboration faults fixed in 2108bcc were invisible to `tsc` and to the Node-level service probes, which all passed.
+
+2026-09-08: GeoLibre's Earth Engine panel fails on the Pages deploy because
+`packages/plugins/src/plugins/earth-engine-auth.ts` falls back to opengeos's own
+client id, `141292844612-gitmgm28jkmkujonfkrkvdaqjiqt6qkf.apps.googleusercontent.com`,
+which does not list `https://prototype-tools.github.io` as an authorized
+JavaScript origin; the authorization request returns `redirect_uri_mismatch`
+with "register the JavaScript origin in the Google Cloud Console". It matters
+because the sign-in fails before any account is involved, so an Earth Engine
+account cannot fix it. Setting `VITE_GEE_OAUTH_CLIENT_ID` on the GeoLibre build
+step overrides it; the same variable read by the `maplibre-gl-earth-engine` npm
+package does not, its env literal having been frozen at publish time, which is
+visible as `BASE_URL "/"` in that chunk against `"/disturbance-checker/"` in
+GeoLibre's own. The panel persists the project id but never the client id, and
+reads `?ee_project_id=` ahead of the build-time value. Settings > Environment
+Variables cannot supply the client id either: `getRuntimeEnvironment()` in
+`packages/core/src/runtime-env.ts` overlays `window.__GEOLIBRE_RUNTIME_ENV__`
+onto the build env, but the Earth Engine files call their own
+`importMetaEnv()` and never that, so the build variable is the only route on
+the web build. Earth Engine itself takes no API key; GeoLibre's only Google
+key, `VITE_GOOGLE_MAPS_API_KEY`, is for Street View and Google Traffic.
+
+## Deploy check
+
+2026-09-10: a deploy is confirmed by fetching the published bundle at `<site>/plugins/<plugin id>/dist/index.js` with a `?v=<epoch>` query and searching it for the changed text, because Pages serves it with `cache-control: max-age=600` and a plain fetch a minute after run 34521081130 succeeded still returned the old `"Pre year"` bundle; `gh run list -c` also matched nothing on the short SHA `cf0cc73`, so filter by the full SHA or not at all. It matters because both traps make a good deploy look failed.
