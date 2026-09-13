@@ -14,3 +14,4 @@
 - `general.md` also carries the 2026-09-13 Notebook panel finding: the JupyterLite build GeoLibre skips silently, the deploy step and guard that fix it, and the headless REPL check.
 - `general.md` also carries the 2026-09-13 notebook bridge finding: the proven BroadcastChannel round trip, when the Earth Engine panel exposes `window.ee`, and why the Python Earth Engine client cannot be used.
 - `general.md` also carries the 2026-09-13 notebook layer receiver: the window handle both plugins expose, its Earth Engine host allowlist, and the token that keeps two tabs apart.
+- `general.md` also carries the 2026-09-13 GeoAgent model patch: where the latest-model default really lives, the thinking-block replay fix, and that no live chat has tested it.
