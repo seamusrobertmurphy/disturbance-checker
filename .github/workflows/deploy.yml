@@ -110,6 +110,19 @@ jobs:
           done
           du -h "$target"/* | sort -h
 
+      # GeoLibre's Notebook panel loads a JupyterLite site, a full Jupyter
+      # that runs Python in the browser with no server. GeoLibre's prebuild
+      # hook makes it with the `jupyter lite` command, but skips quietly and
+      # exits 0 when that command is missing, so the panel 404s on the
+      # published site. The pins come from the pinned GeoLibre checkout, and
+      # the check after the build fails the deploy if the site is absent.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the JupyterLite build tools
+        run: python -m pip install -r geolibre/apps/geolibre-desktop/jupyterlite/requirements.txt
+
       - name: Build the GeoLibre web app
         working-directory: geolibre
         env:
@@ -163,6 +176,12 @@ jobs:
             echo "runtime present: $loader"
           done
           echo "Cloud model present: $(du -sh "$vendor" | cut -f1)"
+          lite="geolibre/apps/geolibre-desktop/dist/jupyterlite/lab/index.html"
+          if [ ! -f "$lite" ]; then
+            echo "The Notebook panel would 404: $lite is missing"
+            exit 1
+          fi
+          echo "Notebook present: $(du -sh geolibre/apps/geolibre-desktop/dist/jupyterlite | cut -f1)"
 
       # Two things every colleague should get without touching a control.
       #
