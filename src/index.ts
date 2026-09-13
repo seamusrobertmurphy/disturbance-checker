@@ -1,5 +1,6 @@
 import "./style.css";
 import { HelpLibrary } from "./help/panel";
+import { exposeNotebookLayers } from "./notebook/layers";
 import { AUDIENCE_LABELS, AUDIENCE_ORDER, guidesFor } from "./help/registry";
 import { DisturbancePanel } from "./panel/panel";
 import { State, createState, fromPersisted, toPersisted } from "./state";
@@ -150,6 +151,10 @@ const plugin: GeoLibrePlugin = {
         }),
       );
     }
+
+    // Earth Engine layers sent from GeoLibre's notebook land in the Layers
+    // panel through the same host call Add Data uses.
+    teardown.push(exposeNotebookLayers(app));
 
     return true;
   },
