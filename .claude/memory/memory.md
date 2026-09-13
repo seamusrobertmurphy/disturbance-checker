@@ -12,3 +12,4 @@
 - `general.md` also carries the 2026-09-10 harness sizing rule: global border-box and the dark ground, or the guide figures clip at the right edge.
 - `general.md` also carries the 2026-09-10 deploy check: the published bundle path, the ten-minute Pages cache that shows a stale bundle, and the short-SHA filter that finds no run.
 - `general.md` also carries the 2026-09-13 Notebook panel finding: the JupyterLite build GeoLibre skips silently, the deploy step and guard that fix it, and the headless REPL check.
+- `general.md` also carries the 2026-09-13 notebook bridge finding: the proven BroadcastChannel round trip, when the Earth Engine panel exposes `window.ee`, and why the Python Earth Engine client cannot be used.
