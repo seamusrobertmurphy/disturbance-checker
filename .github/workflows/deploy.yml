@@ -264,6 +264,13 @@ jobs:
           style = dist / "satellite-basemap.json"
           style.write_text(json.dumps(satellite, indent=2) + "\n")
 
+          # The corroboration layers, every one switched off, in folders in the
+          # Layers panel. See plugin/scripts/corroboration_layers.py for sources.
+          import sys
+          sys.path.insert(0, "plugin/scripts")
+          from corroboration_layers import project_layers
+          corroboration_layers, corroboration_groups = project_layers()
+
           project = {
               "version": "1.0.0",
               "name": "Disturbance Check",
@@ -274,7 +281,8 @@ jobs:
                   "pitch": 0,
               },
               "basemapStyleUrl": f"{site}satellite-basemap.json",
-              "layers": [],
+              "layers": corroboration_layers,
+              "layerGroups": corroboration_groups,
               "styles": {},
               "plugins": {
                   "manifestUrls": [],
