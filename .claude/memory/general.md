@@ -104,3 +104,7 @@ key, `VITE_GOOGLE_MAPS_API_KEY`, is for Street View and Google Traffic.
 ## Deploy check
 
 2026-09-10: a deploy is confirmed by fetching the published bundle at `<site>/plugins/<plugin id>/dist/index.js` with a `?v=<epoch>` query and searching it for the changed text, because Pages serves it with `cache-control: max-age=600` and a plain fetch a minute after run 34521081130 succeeded still returned the old `"Pre year"` bundle; `gh run list -c` also matched nothing on the short SHA `cf0cc73`, so filter by the full SHA or not at all. It matters because both traps make a good deploy look failed.
+
+## Notebook panel
+
+2026-09-13: GeoLibre's Notebook panel loads a JupyterLite site that its `prebuild` hook makes only when `jupyter lite` is installed, and it skips with exit 0 when it is not, so both Pages deploys served a 404 until `deploy.yml` installed `geolibre/apps/geolibre-desktop/jupyterlite/requirements.txt` and failed on a missing `dist/jupyterlite/lab/index.html`. Confirmed by running `numpy` in `jupyterlite/repl/index.html?kernel=python&code=...&execute=1` through headless Chrome on both sites (Python 3.12.7, numpy 2.0.2). Matters because a GeoLibre bump that changes the requirements path breaks the notebook, and the guard is what catches it.
