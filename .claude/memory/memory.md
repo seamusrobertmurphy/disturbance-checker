@@ -15,3 +15,4 @@
 - `general.md` also carries the 2026-09-13 notebook bridge finding: the proven BroadcastChannel round trip, when the Earth Engine panel exposes `window.ee`, and why the Python Earth Engine client cannot be used.
 - `general.md` also carries the 2026-09-13 notebook layer receiver: the window handle both plugins expose, its Earth Engine host allowlist, and the token that keeps two tabs apart.
 - `general.md` also carries the 2026-09-13 GeoAgent model patch: where the latest-model default really lives, the thinking-block replay fix, and that no live chat has tested it.
+- `general.md` also carries the 2026-09-13 corroboration layer list: why the layers are typed WMS, panel ordering, the survey zoom cap, and the three fire feature services still missing.
