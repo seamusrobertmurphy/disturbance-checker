@@ -186,9 +186,8 @@ jobs:
       # Two things every colleague should get without touching a control.
       #
       # Theme: GeoLibre reads ?theme= first and the operating system preference
-      # second, and persists nothing. Verifiers read classified rasters against
-      # the map all day, so the deployment defaults to dark rather than
-      # inheriting whatever each laptop is set to.
+      # second, and persists nothing. The deployment defaults to light rather
+      # than inheriting whatever each laptop is set to.
       #
       # Activation: a plugin dropped into public/plugins is always *loaded*,
       # but loading is not activating, and v1.9.0 refuses activeByDefault on
@@ -202,9 +201,9 @@ jobs:
       # startup project that switches this plugin on, and the snippet points at
       # it when the visitor asked for no other project.
       #
-      # Both are defaults, not impositions. An explicit ?theme=light or
+      # Both are defaults, not impositions. An explicit ?theme=dark or
       # ?project=... still wins, and the in-app controls are untouched.
-      - name: Open dark, with the plugin already switched on
+      - name: Open light, with the plugin already switched on
         env:
           # The published origin, so URLs written into the startup project are
           # absolute. A relative basemap URL would be resolved against whatever
@@ -284,9 +283,9 @@ jobs:
               "var u=new URL(window.location.href);"
               "var changed=false;"
               "if(!u.searchParams.has('theme')){"
-              "u.searchParams.set('theme','dark');"
-              "document.documentElement.classList.add('dark');"
-              "document.documentElement.style.colorScheme='dark';"
+              "u.searchParams.set('theme','light');"
+              "document.documentElement.classList.remove('dark');"
+              "document.documentElement.style.colorScheme='light';"
               "changed=true;}"
               "var hasProject=['url','project','projectUrl','project_url']"
               ".some(function(k){return u.searchParams.has(k);});"
