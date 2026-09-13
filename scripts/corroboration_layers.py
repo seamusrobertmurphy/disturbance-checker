@@ -15,8 +15,9 @@ and the national Tree Canopy Assessment mortality layer, which is derived from
 the same survey, sits beside them for the national view.
 
 WFIGS perimeters, WFIGS incident points and the interagency historic
-perimeters are feature services with no map drawing endpoint, so they are not
-listed here.
+perimeters are feature services with no map drawing endpoint. The deploy
+snapshots them into PMTiles with fire_snapshots.py, publishes the files under
+fire-records/, and lists them here from that snapshot's snapshot.json, dated.
 """
 
 import json
@@ -181,7 +182,80 @@ def _landfire():
     return layers
 
 
-def project_layers():
+def _pmtiles_layer(layer_id, name, url, style):
+    # The fields GeoLibre's own Add Data dialog writes for a PMTiles address.
+    return {
+        "id": layer_id,
+        "name": name,
+        "type": "pmtiles",
+        "source": {
+            "sourceId": layer_id,
+            "sourceLayers": ["fires"],
+            "tileType": "vector",
+            "type": "vector",
+            "url": url,
+        },
+        "visible": False,
+        "opacity": 1,
+        "style": style,
+        "metadata": {
+            "corroboration": True,
+            "externalNativeLayer": True,
+            "nativeLayerIds": [f"{layer_id}-fires-{kind}" for kind in ("fill", "line", "circle")],
+            "pickable": True,
+            "sourceId": layer_id,
+            "sourceKind": "pmtiles-url",
+            "sourceLayers": ["fires"],
+            "tileType": "vector",
+        },
+        "sourcePath": url,
+    }
+
+
+FIRE_STYLES = {
+    "wfigs-perimeters": {"fillColor": "#e4572e", "strokeColor": "#9b1d20", "fillOpacity": 0.35, "strokeWidth": 1},
+    "wfigs-incidents": {"fillColor": "#ff8c00", "strokeColor": "#7a3e00", "circleRadius": 3, "strokeWidth": 1},
+    "nifc-history": {"fillColor": "#8b0000", "strokeColor": "#5c0000", "fillOpacity": 0.25, "strokeWidth": 1},
+}
+FIRE_LABELS = {
+    "wfigs-perimeters": "WFIGS fire perimeters",
+    "wfigs-incidents": "WFIGS incident points",
+    "nifc-history": "Interagency fire perimeter history",
+}
+
+
+def _fire_records(snapshot_path, site):
+    """Layers for the fire snapshot, newest year first, or None when there is no snapshot."""
+    from pathlib import Path
+
+    snapshot_path = Path(snapshot_path)
+    if not snapshot_path.is_file():
+        return None
+    snapshot = json.loads(snapshot_path.read_text())
+    layers = []
+    for key in ("wfigs-perimeters", "wfigs-incidents", "nifc-history"):
+        files = snapshot["datasets"].get(key, {}).get("files", {})
+        parts = sorted((name.rsplit("-", 1)[1] for name in files),
+                       key=lambda part: (part.isdigit(), part), reverse=True)
+        for part in parts:
+            name = f"{key}-{part}"
+            if part == "all":
+                label = f"{FIRE_LABELS[key]}, all years"
+            elif part == "earlier":
+                label = f"{FIRE_LABELS[key]}, earlier years"
+            else:
+                label = f"{FIRE_LABELS[key]} {part}"
+            count = files[name]["features"]
+            layers.append(_pmtiles_layer(
+                f"corroboration-{name}",
+                f"{label} ({count:,})",
+                f"{site}fire-records/{name}.pmtiles",
+                dict(FIRE_STYLES[key]),
+            ))
+    return snapshot["date"], layers
+
+
+def project_layers(fire_snapshot=None, site=""):
     """Return (layers, layer_groups) for a GeoLibre project.
 
     GeoLibre lists the last layer in the array at the top of the Layers panel,
@@ -190,6 +264,12 @@ def project_layers():
     """
     folders = [
         ("corroboration-group-ids", "Insect and disease survey", _insect_and_disease(), False),
+    ]
+    fires = _fire_records(fire_snapshot, site) if fire_snapshot else None
+    if fires:
+        date, fire_layers = fires
+        folders.append(("corroboration-group-fires", f"Fire records, snapshot {date}", fire_layers, False))
+    folders += [
         ("corroboration-group-hazard", "Wildfire hazard", _wildfire_hazard(), False),
         ("corroboration-group-mtbs", "MTBS", _mtbs(), True),
         ("corroboration-group-landfire", "LANDFIRE disturbance", _landfire(), True),

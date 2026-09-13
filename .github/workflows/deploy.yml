@@ -211,6 +211,49 @@ jobs:
       #
       # Both are defaults, not impositions. An explicit ?theme=dark or
       # ?project=... still wins, and the in-app controls are untouched.
+      # The fire records come from ArcGIS feature services that cannot draw a
+      # map, so they are snapshotted into PMTiles by
+      # plugin/scripts/fire_snapshots.py and published beside the app. A
+      # snapshot is reused for the rest of its ISO week, so only the first
+      # deploy of a week pays the download. When the services do not answer,
+      # the cached snapshot is published with a warning and keeps its own date
+      # in the Layers panel.
+      - name: Week of the fire snapshot
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the fire snapshot
+        id: fires
+        uses: actions/cache@v4
+        with:
+          path: fire-snapshot
+          key: fire-snapshot-${{ steps.week.outputs.week }}-${{ hashFiles('plugin/scripts/fire_snapshots.py') }}
+          restore-keys: fire-snapshot-
+
+      - name: Build the fire snapshot
+        if: steps.fires.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get install -y --no-install-recommends libsqlite3-dev zlib1g-dev
+          git clone --depth 1 --branch 2.79.0 https://github.com/felt/tippecanoe.git tippecanoe-src
+          make -C tippecanoe-src -j"$(nproc)" tippecanoe
+          rm -rf fire-snapshot.new
+          if python3 plugin/scripts/fire_snapshots.py fire-snapshot.new tippecanoe-src/tippecanoe; then
+            rm -rf fire-snapshot
+            mv fire-snapshot.new fire-snapshot
+          elif [ -f fire-snapshot/snapshot.json ]; then
+            echo "::warning::The fire services did not answer; publishing the cached snapshot instead"
+          else
+            echo "No fire snapshot could be built and none was cached"
+            exit 1
+          fi
+
+      - name: Publish the fire snapshot
+        run: |
+          target=geolibre/apps/geolibre-desktop/dist/fire-records
+          mkdir -p "$target"
+          cp fire-snapshot/*.pmtiles fire-snapshot/snapshot.json "$target/"
+          du -sh "$target"
+
       - name: Open light, with the plugin already switched on
         env:
           # The published origin, so URLs written into the startup project are
@@ -269,7 +312,9 @@ jobs:
           import sys
           sys.path.insert(0, "plugin/scripts")
           from corroboration_layers import project_layers
-          corroboration_layers, corroboration_groups = project_layers()
+          corroboration_layers, corroboration_groups = project_layers(
+              fire_snapshot="fire-snapshot/snapshot.json", site=site
+          )
 
           project = {
               "version": "1.0.0",
