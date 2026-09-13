@@ -6,43 +6,43 @@ bottom of the tool panel.
 
 ## For colleagues running checks
 
-1. [Using the tool](using-the-tool.md) — a walkthrough of a single disturbance
+1. [Using the tool](using-the-tool.md), a walkthrough of a single disturbance
    check, from opening the page to a manifest you can paste into a finding.
-2. [Interpreting results](interpreting-results.md) — what the layers mean, how
-   to read the histogram before trusting the map, how to cross-check the three
-   indices, and what to confirm before raising anything.
-3. [Matching the season](season-matching.md) — why the pre and post windows
-   must sit at the same point of the season, what each index does through the
-   year, four worked examples with the season charts, and the published work
-   behind the rule.
+2. [Interpreting results](interpreting-results.md), covering what the layers
+   mean, how to read the histogram before relying on the map, how to cross-check
+   the three indices, and what to confirm before raising a finding.
+3. [Matching the season](season-matching.md), on why the pre and post windows
+   sit at the same point of the season, what each index does through the year,
+   four worked examples with the season charts, and the published work behind
+   the practice.
 
 ## Method and reference
 
-4. [From QGIS to the browser](from-qgis.md) — what this tool replaces, what is
-   deliberately identical, what changed and why, and what the QGIS script still
-   does better. Illustrated with the original SOP screenshots.
-5. [Methods reference](methods.md) — the full processing chain with every
+4. [From QGIS to the browser](from-qgis.md), on what this tool replaces, what
+   is deliberately identical, what changed and why, and what the QGIS script
+   still does better, illustrated with the original SOP screenshots.
+5. [Methods reference](methods.md), the full processing chain with every
    constant, and a table of where the SOP PDF, the QGIS script and the ArcGIS
-   script disagree.
+   script differ.
 
 ## For whoever sets it up
 
-6. [Data and access](data-access.md) — where the imagery comes from, the three
-   hosts a run needs to reach, and why there is nothing to sign in to.
-7. [First run](first-run.md) — the three ways to reach a live run, what each
-   stage looks like, and the failures most likely to appear.
+6. [Data and access](data-access.md), on where the imagery comes from, the
+   three hosts a run needs to reach, and why there is nothing to sign in to.
+7. [First run](first-run.md), covering the three ways to reach a live run, what
+   each stage looks like, and the failures most likely to appear.
 
 ## For maintainers
 
-8. [Revision notes](revision-notes.md) — known gaps, why each matters, where a
-   change would go, and findings from live runs.
+8. [Revision notes](revision-notes.md), covering known gaps, why each matters,
+   where a change would go, and findings from live runs.
 
 ## Adding a guide
 
 Write the markdown in this folder, then add one entry to `GUIDES` in
 `src/help/registry.ts`. The build renders it to HTML and it appears in the app
-automatically. Give it an `audience` so it files itself under the right heading:
-`operator`, `setup` or `maintainer`.
+automatically. Its `audience`, one of `operator`, `setup` or `maintainer`,
+places it under the matching heading.
 
 Cross-document links written the normal markdown way, such as
 `[first run](first-run.md)`, are rewritten at build time so they switch guides
@@ -56,6 +56,6 @@ on GitHub. A reference to a file that does not exist fails the build rather than
 shipping a broken image. Only images a guide actually uses are inlined, so
 adding a file to `images/` costs nothing until it is referenced.
 
-Source material for the figures lives alongside: the SOP `.docx` files, the
-`Screenshots/` captures and the `Slides/` deck. Everything under `images/` is a
-downscaled WebP derived from those.
+Source material for the figures, namely the SOP `.docx` files, the
+`Screenshots/` captures and the `Slides/` deck, lives alongside. Everything under
+`images/` is a downscaled WebP derived from those.

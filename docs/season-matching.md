@@ -14,11 +14,11 @@ A pre-post delta is a subtraction. The tool builds one cloud-free composite
 from every clear Sentinel-2 look inside the pre window, another from the post
 window, and subtracts the index of the first from the index of the second at
 every pixel. The result is a map of everything that changed between the two
-composites, and disturbance is only one of the things that can change. The
-sun sat at a different height. The leaves were at a different stage. The soil
-held a different amount of water. Snow lay on the ground in one and not the
-other. Each of those moves the index without a single tree being cut, and each
-produces a delta that looks like disturbance, over the whole area at once.
+composites, and disturbance is only one of the things that can change. A
+different sun height, a different stage of leaf development, a different soil
+water content or snow on the ground in one composite and not the other each
+moves the index without any tree being cut, and each produces a delta that
+resembles disturbance over the whole area at once.
 
 The SOP's defence is to match the calendar dates of the two windows, so that
 both composites sit at the same point of the year. The panel warns when they
@@ -84,9 +84,10 @@ shadows and less light reaching the ground, and in rough terrain that changes
 the reflectance of every slope without any change in the canopy. Verbyla et
 al. (2008) found a "negative bias in remotely sensed fire severity estimates
 as potential solar radiation decreased owing to topography", strongest in
-valley bottoms and on steep north-facing slopes. The sunlight chart is there
-so this is seen. Two windows on the same dates receive the same sun geometry;
-two windows a month apart do not, and no amount of cloud masking corrects it.
+valley bottoms and on steep north-facing slopes. The sunlight chart shows this
+effect directly. Two windows on the same dates receive the same sun geometry,
+while two windows a month apart do not, and cloud masking does not correct for
+the difference.
 
 **Climate sets the timing.** The dates on which a stand leafs out and browns
 off are not fixed. White et al. (1997) modelled them from weather across the
@@ -164,8 +165,8 @@ what counts as a large gap depends on the forest. The same numbers are written
 to the manifest so a finding can quote them.
 
 The grid behind the charts is about fifty kilometres across, so the values are
-the season of the district rather than the weather at the plot. That is the
-right scale for the question, which is about timing rather than any one day.
+the season of the district rather than the weather at the plot, a scale that
+suits the question because it concerns timing rather than any one day.
 
 ## One year, matched
 
@@ -176,8 +177,8 @@ years.
 ![Section 3 with pre 2023-08-01 to 2023-09-01 and post 2024-08-01 to 2024-09-01, four season charts with one shaded band in August, and a table of pre against post](images/figS1-matched-summer.webp)
 
 Both windows fall on the same dates, so one band is shaded, and it sits on the
-summer plateau of temperature and sunlight in both years. The two coloured
-lines run together through August. The table confirms it.
+summer plateau of temperature and sunlight in both years, with the two coloured
+lines running together through August, as the table confirms.
 
 | | Pre, 2023 | Post, 2024 | Post minus pre |
 |---|---|---|---|
@@ -187,23 +188,23 @@ lines run together through August. The table confirms it.
 | Days with snow cover | 0 | 0 | 0 |
 
 A degree of temperature and a tenth of the sunlight are the ordinary
-difference between two summers. The rain differs more, and that is the number
-to keep in mind when reading dNDMI. A wetter post window means a slightly
-wetter canopy, so a small negative dNDMI signal across the whole area is
-season rather than stress, and the histogram should be read for a uniform
-offset before any pixel is classified. Nothing here says the windows should
-move. Run.
+difference between two summers. The rain differs more, and it is the figure
+most relevant to dNDMI, because a wetter post window means a slightly wetter
+canopy, so a small negative dNDMI signal across the whole area reflects season
+rather than stress. The histogram is worth checking for a uniform offset before
+any pixel is classified. Nothing in the charts suggests moving the windows, and
+the run can proceed.
 
 ## One year, mismatched
 
-The example that prompted the feature. A Californian project with a reporting
-period from 1 January to 31 December, and a first attempt at windows of 1
-March to 1 April for the start and 30 September to 31 October for the end.
+This example prompted the feature. It is a Californian project with a
+reporting period from 1 January to 31 December, and a first attempt at windows
+of 1 March to 1 April for the start and 30 September to 31 October for the end.
 
 ![Section 3 with pre 2023-03-01 to 2023-04-01 and post 2023-09-30 to 2023-10-31, two shaded bands in March and October on every chart, and a table showing an eleven degree gap](images/figS2-mismatched.webp)
 
-Two bands are shaded, and they sit on opposite sides of the year. The table
-makes the size of the problem plain.
+Two bands are shaded, on opposite sides of the year, and the table shows the
+size of the gap between them.
 
 | | Pre, March | Post, October | Post minus pre |
 |---|---|---|---|
@@ -216,22 +217,23 @@ The pre composite was built with snow on the ground on every day of its
 window and nearly three hundred millimetres of rain in the month. The post
 composite was built at the end of the dry season. Every index would move over
 the whole area, and the delta would report the drying of a Mediterranean
-summer as disturbance. The fix is the SOP's own rule. Use the same calendar
-window at the start and the end of the reporting period, so that a period
-running 1 January to 31 December is screened with, for example, 1 March to 1
-April in the first year against 1 March to 1 April in the next, or better,
-with the growing-season default in both years. The period's own start and end
-dates are the accounting boundary, not the imaging dates.
+summer as disturbance. The SOP's own rule resolves this, which is to use the
+same calendar window at the start and the end of the reporting period, so that
+a period running 1 January to 31 December is screened with, for example, 1
+March to 1 April in the first year against 1 March to 1 April in the next, or
+preferably with the growing-season default in both years. The period's own
+start and end dates are the accounting boundary rather than the imaging dates.
 
 ## A late spring
 
-Two windows on matching dates can still fail. The same Californian site, with
-1 March to 1 April in 2023 against the same dates in 2024.
+Two windows on matching dates can still differ in season, as at the same
+Californian site with 1 March to 1 April in 2023 against the same dates in
+2024.
 
 ![Section 3 with pre 2023-03-01 to 2023-04-01 and post 2024-03-01 to 2024-04-01, one shaded band in March, the 2023 line below the 2024 line and below the grey mean through the band](images/figS3-late-spring.webp)
 
-One band is shaded, so the dates pass the calendar rule. The lines do not
-agree inside it. The 2023 line runs below the 2024 line and below the grey
+One band is shaded, so the dates pass the calendar rule, although the lines
+disagree inside it. The 2023 line runs below the 2024 line and below the grey
 mean through March, and the snow chart shows cover lasting into April in 2023.
 
 | | Pre, 2023 | Post, 2024 | Post minus pre |
@@ -246,13 +248,14 @@ was not. A deciduous canopy at 1 April 2023 was two or three weeks behind the
 same canopy at 1 April 2024, so the post composite is greener than the pre
 composite across the whole area for reasons that have nothing to do with the
 forest. The delta would read as recovery, and a real clearing inside it would
-be under-classified by the same amount. Two remedies, in order. Move both
-windows into the growing season, where the plateau makes a fortnight's
-difference in timing matter far less, which is why the SOP's default is
-August. If a spring window is required, hold the post window and move the pre
-window later, a week at a time, until the 2023 line meets the 2024 line on the
-temperature chart and the snow has gone in both, and record the shift and the
-reason in the finding. The manifest carries the numbers either way.
+be under-classified by the same amount. Two remedies are available, in order of
+preference. The first is to move both windows into the growing season, where
+the plateau makes a fortnight's difference in timing matter far less, which is
+why the SOP's default is August. The second, where a spring window is required,
+is to hold the post window and move the pre window later, a week at a time,
+until the 2023 line meets the 2024 line on the temperature chart and the snow
+has gone in both, with the shift and its reason recorded in the finding. The
+manifest carries the numbers in either case.
 
 ## Several years
 
@@ -266,9 +269,9 @@ metres with three chained periods, 2021 to 2022, 2022 to 2023 and 2023 to
 
 ![Section 3 with three reporting periods chained from 2021 to 2024, four coloured lines on every chart, one shaded band in August, and three tables](images/figS4-multi-year.webp)
 
-Four lines, one band. The band sits on the summer plateau in every year, so
-the calendar rule holds across the whole chain. The tables show where the
-years differ.
+The charts carry four lines and one band, which sits on the summer plateau in
+every year, so the calendar rule holds across the whole chain, and the tables
+show where the years differ.
 
 | Period | Temperature | Sunlight | Rain | Snow days |
 |---|---|---|---|---|
@@ -276,30 +279,31 @@ years differ.
 | RP2, 2022 to 2023 | -1.5 | -2.2 | +37 | 0 |
 | RP3, 2023 to 2024 | -1.3 | -0.8 | +14 | +2 |
 
-RP1 is the one to read carefully. August 2022 was three degrees warmer, a
+RP1 warrants the closest reading. August 2022 was three degrees warmer, a
 fifth sunnier and half as wet as August 2021, and the rain chart shows the
 four-week total falling to near zero through the 2022 window. A canopy under
 that much more heat and that much less water reads drier in the shortwave
 infrared, so the RP1 dNDMI will carry a uniform stress signal over the whole
 area that the RP2 dNDMI, taken into a cooler and wetter August, partly
-reverses. Neither is disturbance. The histogram for RP1 should show it as a
-shifted bulk rather than a tail, and the classes should be read against that
-shift. Because one threshold set applies to every period, a class boundary
-that fits RP1 will not fit RP2, and the drift between them is what the
-justification field is for.
+reverses, and neither signal is disturbance. The histogram for RP1 is likely
+to show it as a shifted bulk rather than a tail, and the classes are best read
+against that shift. Because one threshold set applies to every period, a class
+boundary that fits RP1 will not fit RP2, and the justification field is the
+place to record the drift between them.
 
-The August window is still the right one. Moving it would not remove a drought,
-and the alternative, a different window for each period, breaks the
-comparability the chain exists to provide. What the charts add is the reason
-the RP1 layer differs, in numbers the finding can cite.
+The August window remains the better choice, because moving it would not
+remove a drought, and the alternative, a different window for each period,
+breaks the comparability the chain exists to provide. What the charts add is
+the reason the RP1 layer differs, in numbers the finding can cite.
 
 ## What to record
 
-Three things go into the finding. The window dates, which the manifest
-already carries. The pre and post climate for each period, which the manifest
-now carries under "Season at the site". And, where a window was moved from the
-default or from the period boundary, the reason, in the justification field
-or in the finding text, with the chart values that prompted it.
+Three things belong in the finding. The first is the window dates, which the
+manifest already carries, and the second is the pre and post climate for each
+period, which the manifest now carries under "Season at the site". The third,
+where a window was moved from the default or from the period boundary, is the
+reason, in the justification field or in the finding text, with the chart
+values that prompted it.
 
 ## References
 

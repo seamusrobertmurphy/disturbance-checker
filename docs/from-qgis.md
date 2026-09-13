@@ -1,51 +1,52 @@
 # From QGIS to the browser
 
-What this tool replaces, what it keeps, and what it deliberately does not do.
-Written for anyone who ran the disturbance check the old way and wants to know
-what changed underneath.
+This guide sets out what the tool replaces, what it keeps and what it leaves
+out, for anyone who ran the disturbance check in QGIS and would like to see what
+changed underneath.
 
 ## The short version
 
-In the QGIS workflow nothing ran on your machine. Every composite, index, delta,
-histogram and classification executed on Google's servers, and QGIS was an
-authentication shell, a code pane and a tile viewer.
+In the QGIS workflow the processing ran on Google's servers rather than on the
+local machine. Every composite, index, delta, histogram and classification
+executed in Earth Engine, and QGIS served as an authentication shell, a code
+pane and a tile viewer.
 
-In this tool nothing runs on anyone's server. The browser reads Sentinel-2
-pixels straight out of a public archive and does the arithmetic itself.
+In this tool the processing runs in the browser. It reads Sentinel-2 pixels
+directly from a public archive and does the arithmetic locally.
 
-So the work has moved twice, and it now sits closer to you than it ever did in
-the desktop GIS. What went with it is every piece of apparatus that existed to
-obtain and hold a Google credential.
+The work has therefore moved twice, and it now sits closer to the analyst than
+it did in the desktop GIS. The setup that existed to obtain and hold a Google
+credential has gone with it.
 
 ## What the old workflow required
 
-Steps 1 and 2 of the SOP, before any analysis begins.
+Steps 1 and 2 of the SOP covered setup before any analysis began.
 
 ![OSGeo4W Shell refusing the geemap install with an access denied error](images/step5-osgeo4w-denied.webp)
 
-*The failure mode that cost the most support time. `pip install geemap` against
-the QGIS-bundled Python, refused for want of an elevated shell. If pip resolved
-to system Python instead, the plugin imported but `ee` was missing at runtime,
-which produced a different and less obvious error later.*
+*The failure mode that took the most support time was `pip install geemap`
+against the QGIS-bundled Python, refused without an elevated shell. Where pip
+resolved to system Python instead, the plugin imported but `ee` was missing at
+runtime, which produced a different and less obvious error later.*
 
-Then three plugins, activated together and in the right order:
+Three plugins then had to be activated together and in the right order.
 
 ![QGIS Plugin Manager with the Earth Engine plugins installed, and the disturbance layer stack in the Layers panel](images/step1-plugin-manager.webp)
 
-*Google Earth Engine, GEE Data Catalog and Geemap, all three active. The Layers
-panel on the left is the stack the script produces, and it is the same stack the
-browser tool builds today.*
+*Google Earth Engine, GEE Data Catalog and Geemap are all active here. The
+Layers panel on the left holds the stack the script produces, which is the same
+stack the browser tool builds today.*
 
-Then binding a Cloud project in the plugin settings, an OAuth round trip through
-the system browser, and a credentials cache that expired after roughly seven
-days and had to be refreshed with `ee.Authenticate(force=True)`.
+The remaining setup was binding a Cloud project in the plugin settings, an OAuth
+round trip through the system browser, and a credentials cache that expired
+after roughly seven days and was refreshed with `ee.Authenticate(force=True)`.
 
-Only then could the script be pasted into the code pane and run:
+After that the script could be pasted into the code pane and run.
 
 ![The geemap code panel with the disturbance script loaded and executed](images/step4-geemap-run.webp)
 
-*Script on the right, Run Code dispatching to Earth Engine, layers appearing on
-the left. Everything to the left of this point was setup.*
+*The script is on the right, Run Code dispatches to Earth Engine, and the layers
+appear on the left. Everything before this point was setup.*
 
 ## What replaced it
 
@@ -61,12 +62,12 @@ the left. Everything to the left of this point was setup.*
 | Layer names typed into `m.addLayer` calls | Same stack, built automatically |
 
 The four constants at the top of the script became the first three panel
-sections. The class breaks in `classify_delta_*()` became section 4. The
+sections, the class breaks in `classify_delta_*()` became section 4, and the
 `m.addLayer` block at the end became the layer sync.
 
 ## What is the same
 
-Deliberately identical, so results are comparable across the two:
+The following are kept identical so that results are comparable across the two.
 
 - Sentinel-2 L2A surface reflectance, divided by 10000, clipped to the ROI.
 - NDVI on B8/B4, NDMI on B8/B11, NBR on B8A/B12.
@@ -77,23 +78,25 @@ Deliberately identical, so results are comparable across the two:
 - The class breaks, unchanged, including the different dNDMI ramp.
 - The visualisation palettes and ranges, including the RGB gamma of 1.2.
 
-Full detail in [methods.md](methods.md), including a table of the places where
-the SOP PDF, the QGIS script and the ArcGIS script disagree with each other.
+[methods.md](methods.md) gives the full detail, including a table of the places
+where the SOP PDF, the QGIS script and the ArcGIS script disagree with each
+other.
 
 ## What is different, and why
 
 **Cloud masking works differently.** The scripts rank every pixel on Cloud
 Score+ and keep the single clearest observation. That score is a Google product
-and exists only inside Earth Engine. This build offers the Sen2Cor scene
+available only inside Earth Engine. This build offers the Sen2Cor scene
 classification, which is weaker, or a segmentation model run in the tab, which
-catches thin edges and cloud shadow the classification lets through. Either way
-there is no clarity score to rank on, so the reduction is a median, which is the
-SOP's own documented alternative, and the SOP's floor of four clear scenes has
-gone from advisory to binding. Read the overpass counts.
+catches thin edges and cloud shadow that the classification lets through. In
+both cases there is no clarity score to rank on, so the reduction is a median,
+which is the SOP's own documented alternative, and the SOP's floor of four clear
+scenes becomes a binding requirement rather than advice. The overpass counts are
+worth checking for that reason.
 
 **Water comes from the scene classification, not JRC Global Surface Water.** GSW
-is an Earth Engine asset with no open equivalent. The two disagree on seasonal
-water.
+is an Earth Engine asset with no open equivalent, and the two sources differ on
+seasonal water.
 
 **The histogram has no ceiling.** The scripts reduce to a `maxPixels` limit and
 truncate past it, which the SOP records happening silently at 1e9 on wide areas.
@@ -102,47 +105,45 @@ raise.
 
 **Areas are counted, not integrated.** The grid is the native Sentinel-2 UTM
 grid, so a pixel is exactly 20 by 20 m and hectares are a multiplication. The
-scripts had to pass an explicit projection to every area reduction to avoid
-measuring on a degree grid.
+scripts passed an explicit projection to every area reduction to avoid measuring
+on a degree grid.
 
-**Bounds cannot be reversed.** The script's `ee.Geometry.Rectangle` accepts
-reversed coordinates and returns an empty geometry with no error. The tool
-normalises them.
+**Bounds are normalised.** The script's `ee.Geometry.Rectangle` accepts reversed
+coordinates and returns an empty geometry without an error, whereas the tool
+puts them in the right order.
 
-**Thresholds are recorded.** Moving a break off its default requires a written
-justification that lands in the manifest, rather than a note in a workbook that
-may or may not be written.
+**Thresholds are recorded.** Moving a break off its default asks for a short
+written rationale, which is kept in the manifest rather than in a separate
+workbook note.
 
-**Nothing is exported.** Step 9 and 12 of the script queue GeoTIFF exports to
-Drive. That is not implemented here, and it is the largest deliberate gap.
+**Nothing is exported.** Steps 9 and 12 of the script queue GeoTIFF exports to
+Drive. Export is not implemented here, and it is the largest gap between the
+two.
 
 ## What the old workflow still does better
 
-**Export.** Batch export to Drive or Cloud Storage, at 10 m, outliving the
-session. If you need archived rasters, run the script.
+**Export.** The script supports batch export to Drive or Cloud Storage at 10 m,
+and the exports outlive the session, so archived rasters are best produced with
+the script.
 
-**Cloud Score+.** Not reachable from a browser, and nothing else offers a
-continuous clarity score to rank observations on, which is why the reduction
-here is a median rather than a best-pixel pick.
+**Cloud Score+.** The score is not reachable from a browser, and no other
+source offers a continuous clarity score to rank observations on, which is why
+the reduction here is a median rather than a best-pixel pick.
 
-**Arbitrary analysis.** The code pane runs any Earth Engine expression. The
-panel runs one analysis with parameters. For anything outside the SOP, the
-script is the tool.
+**Arbitrary analysis.** The code pane runs any Earth Engine expression, while
+the panel runs one analysis with parameters, so work outside the SOP is better
+suited to the script.
 
 **Landsat and anything before 2015.** The USGS archive is requester-pays, so a
 credential-free tool cannot read it.
 
-The two are complements. The browser tool is for screening quickly, repeatedly,
-with an audit record and without an account. The script is for the archival
-deliverable and for the cases where masking quality decides the answer.
+The two approaches complement each other. The browser tool suits quick,
+repeatable screening with an audit record and without an account, and the script
+suits the archival deliverable and the cases where masking quality decides the
+answer.
 
-## Where the original documents live
+## The original documents
 
-The SOP, both production scripts and the original screenshots are in this
-repository under `docs/`:
-
-- `TÜV SÜD SOP Disturbance Check-QGIS.docx` and the ArcGIS variant
-- `Screenshots/` — the step-by-step setup captures
-- `Slides/` — the geemap-for-QGIS introduction deck
-
-The figures reproduced in this library are downscaled copies of the same images.
+The SOP itself, both production scripts, the step-by-step setup captures and the
+geemap-for-QGIS introduction deck are held outside this repository. Only the
+figures are reproduced here, as downscaled WebP copies under `docs/images/`.

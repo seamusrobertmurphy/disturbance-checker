@@ -38,23 +38,24 @@ comes from.
 
 Eight sections, in order:
 
-1. **Imagery** — where the data comes from and which cloud mask is running.
-2. **Area of interest** — typed bounds, pasted GeoJSON, or an uploaded project
+1. **Imagery**, where the data comes from and which cloud mask is running.
+2. **Area of interest**, as typed bounds, pasted GeoJSON, or an uploaded project
    boundary.
-3. **Reporting periods** — pre and post windows, one or many, plus the cloud
+3. **Reporting periods**, the pre and post windows, one or many, plus the cloud
    ceiling, with the daily climate at the site drawn under them so the windows
    can be placed at matching points of the season.
-4. **Severity thresholds** — the Low, Moderate and High cut points for each of
+4. **Severity thresholds**, the Low, Moderate and High cut points for each of
    the three differenced indices, editable before the first run.
-5. **Site data** — project boundary, streamside management zones, and plot
+5. **Site data**, the project boundary, streamside management zones, and plot
    points, uploaded as zipped shapefile, GeoJSON or KML.
-6. **Results** — overpass counts, histograms with draggable breaks, class areas.
-7. **Visual check** — the run's own before-and-after true colour on the 20 m
+6. **Results**, with overpass counts, histograms with draggable breaks, and
+   class areas.
+7. **Visual check**, the run's own before-and-after true colour on the 20 m
    working grid, optionally sharpened to 2.5 m, beside Esri's dated
    high-resolution archive.
-8. **Corroboration** — the same ground as four independent records: mapped
-   fire, LCMS change, LANDFIRE disturbance agent, and the FACTS management
-   record.
+8. **Corroboration**, the same ground seen through four independent records,
+   namely mapped fire, LCMS change, LANDFIRE disturbance agent, and the FACTS
+   management record.
 
 ## How it works
 
@@ -80,67 +81,66 @@ panel then, per period:
    the three classified rasters, and adds them to GeoLibre with the classified
    rasters on top.
 
-Nothing about the analysis is hidden in the tool. Every constant traces to a
-section of the SOP in [`src/defaults.ts`](src/defaults.ts).
+Every constant in the analysis traces to a section of the SOP in
+[`src/defaults.ts`](src/defaults.ts).
 
 ## Severity classes
 
-Each differenced index is cut into four classes: undisturbed, Low, Moderate and
-High. Undisturbed pixels are masked server-side, so the classified rasters
+Each differenced index is divided into four classes, undisturbed, Low, Moderate
+and High. Undisturbed pixels are masked server-side, so the classified rasters
 arrive with transparency already in them and only disturbed cells are drawn over
 the site.
 
 The thresholds ship as the SOP Step 6 defaults and are editable in the opening
 panel, before the first run, so a colleague can set them for their own site
 without waiting for a result. After a run they can also be dragged directly on
-each histogram, against the distribution they are cutting. Either way, a value
-moved off its default marks that index as adjusted and requires a written
-justification, which is saved with the project. Ordering is enforced, so
-Low can never cross Moderate.
+each histogram, against the distribution they are cutting. In either case, a
+value moved off its default marks that index as adjusted and asks for a written
+justification, which is saved with the project. The breaks are kept in order, so
+Low always stays below Moderate.
 
 ## Site data
 
 Project boundary, streamside management zones and plot points load from a zipped
-shapefile, a GeoJSON file, or a KML. Files are parsed in the browser and are
-never uploaded anywhere.
+shapefile, a GeoJSON file, or a KML. Files are parsed in the browser and are not
+uploaded.
 
 Plot points are labelled on the map with their identifier, so a screenshot of a
 disturbance polygon can be tied to a plot without a separate legend. The
 identifier column is detected automatically, preferring plot-specific names like
 `Plot ID` or `PLOT_NO` over generic ones like `OBJECTID`, and the detected field
-is always shown and always overridable. Loading a project boundary also sets it
+is shown and can be changed. Loading a project boundary also sets it
 as the area of interest, rather than making the operator supply the same extent
 twice.
 
 ## Seeing the ground
 
-Sentinel-2 at 10 metres tells you an index changed. It cannot tell you what
-changed, because a road, a landing, a cutblock edge and a blowdown patch are all
-the same handful of pixels. Section 7 answers that question two ways on one
-screen.
+Sentinel-2 at 10 metres shows that an index changed but not what changed,
+because a road, a landing, a cutblock edge and a blowdown patch occupy the same
+handful of pixels. Section 7 addresses that question in two ways on one screen.
 
 The tool's own before-and-after true colour is built from the same masked
 observations the indices were built from, on the 20 metre working grid, so it
 shows the composite that actually produced the number. Either view can be
 sharpened to 2.5 metres by SEN2SRLite, a 236 kB model run in the tab on WebGPU
 where the browser offers it and WebAssembly where it does not. Sharpening is a
-separate pass over the archive and never feeds the analysis; hectare counts keep
-reading the 20 metre grid, so an invented pixel can change what a verifier sees
-but not what the tool certifies.
+separate pass over the archive and does not feed the analysis. Hectare counts
+continue to read the 20 metre grid, so a generated pixel can affect what a
+verifier sees but not the figures the tool reports.
 
 Beside it sits Esri's World Imagery Wayback, the dated archive of that basemap,
 frequently sub-metre and served anonymously. It replaces the Google Earth
-historical timeline the SOP leans on, and it needs no account.
+historical timeline the SOP relies on, and it needs no account.
 
 ## Corroboration
 
 Section 8 puts the same ground against four records built by other people from
-other data, none of which is ever an input to the calculation.
+other data, none of which is an input to the calculation.
 
-Mapped fire comes from three registries with different jobs: MTBS, which assesses
-severity from imagery a year or more after the event; the interagency perimeter
-feed, which is same-season and covers the years MTBS has not reached; and the
-Canadian National Burned Area Composite, which runs from 1972 and carries
+Mapped fire comes from three registries with different roles. MTBS assesses
+severity from imagery a year or more after the event, the interagency perimeter
+feed is same-season and covers the years MTBS has not reached, and the Canadian
+National Burned Area Composite which runs from 1972 and carries
 projects north of the border. LCMS, the Forest Service Landscape Change
 Monitoring System, classifies change annually across the conterminous United
 States from the full Landsat and Sentinel-2 record by a method unlike this
@@ -150,28 +150,29 @@ distinct classes. FACTS is different in kind from the other three, because it is
 not a measurement of the canopy but the record of what was done, entered by the
 people who did it, with a date and an acreage.
 
-Agreement between an unrelated method and a threshold this tool set is worth
-more than either alone. Disagreement is the finding.
+Agreement between an unrelated method and a threshold set in this tool carries
+more weight than either on its own, and where the two disagree, the disagreement
+is the matter worth investigating.
 
 ## What it checks
 
-The SOP's hard-won lessons are encoded as diagnostics rather than left to
-memory:
+The practical lessons recorded in the SOP are built in as diagnostics, so they
+do not depend on recall.
 
 - **Dormant-season windows.** A window outside July to September raises a
   warning, because senescence drives SWIR1 reflectance up before leaf-fall and
   produces a uniform false moisture-stress signal in dNDMI.
 - **Mismatched pre and post windows.** Phenology drift between periods is the
-  most common source of fake inter-period change.
+  most common source of spurious inter-period change.
 - **Histogram shape.** A unimodal distribution with a long right tail and no gap
-  is flagged as composite contamination, not disturbance. A bimodal
+  is flagged as composite contamination rather than disturbance. A bimodal
   distribution with a clear gap suggests where the Low break belongs.
 - **Thin composites.** Fewer than four scenes per window is flagged, because the
   median normaliser is unstable below that.
 - **Reversed coordinates.** Bounds are normalised, so a swapped east and west
   cannot silently produce an empty geometry.
 
-Moving a class break off its default marks the delta as adjusted and requires a
+Moving a class break off its default marks the delta as adjusted and asks for a
 written justification, which is saved with the project.
 
 ## Nothing expires
@@ -180,7 +181,7 @@ Earlier versions served map tiles against an access token that lapsed after an
 hour, and the layers went with it. The layers are now images the tab painted, so
 they last as long as the tab does.
 
-Only parameters are saved into a project, never results, which means a saved
+Only parameters are saved into a project, not results, which means a saved
 project is a description of a check rather than a snapshot of one. Re-running it
 costs seconds and needs no credentials.
 
@@ -192,8 +193,8 @@ from GitHub Pages at
 vendored here; the deploy workflow checks it out at a pinned tag, drops in the
 built plugin, builds, and publishes.
 
-No secrets are required. Set Pages to build from GitHub Actions and push; see
-[`docs/first-run.md`](docs/first-run.md).
+No secrets are required. Set Pages to build from GitHub Actions and push, as
+described in [`docs/first-run.md`](docs/first-run.md).
 
 Bump `GEOLIBRE_REF` in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)
 to move to a newer GeoLibre.
