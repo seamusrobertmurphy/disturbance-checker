@@ -40,11 +40,15 @@ def _imageserver(url, extra=""):
 
 
 def _layer(layer_id, name, url, tiles, attribution, minzoom=None):
+    # Typed as WMS because each tile is an image requested by bounding box, which
+    # is how GeoLibre draws WMS. As xyz, GeoLibre tries on opening to resolve
+    # the service address into an {x}/{y}/{z} template, fails, and logs a
+    # warning per layer. The service address sits in metadata for the same
+    # reason: in the source it would be read as a WMS endpoint.
     source = {
         "type": "raster",
         "tiles": [tiles],
         "tileSize": 256,
-        "url": url,
         "attribution": attribution,
     }
     if minzoom is not None:
@@ -52,11 +56,11 @@ def _layer(layer_id, name, url, tiles, attribution, minzoom=None):
     return {
         "id": layer_id,
         "name": name,
-        "type": "xyz",
+        "type": "wms",
         "source": source,
         "visible": False,
         "opacity": 0.8,
-        "metadata": {"corroboration": True},
+        "metadata": {"corroboration": True, "serviceUrl": url},
     }
 
 
@@ -178,7 +182,12 @@ def _landfire():
 
 
 def project_layers():
-    """Return (layers, layer_groups) for a GeoLibre project, folders in panel order."""
+    """Return (layers, layer_groups) for a GeoLibre project.
+
+    GeoLibre lists the last layer in the array at the top of the Layers panel,
+    so the folders and the layers inside them are written bottom first, which
+    leaves the survey folder on top with its newest year first.
+    """
     folders = [
         ("corroboration-group-ids", "Insect and disease survey", _insect_and_disease(), False),
         ("corroboration-group-hazard", "Wildfire hazard", _wildfire_hazard(), False),
@@ -186,7 +195,7 @@ def project_layers():
         ("corroboration-group-landfire", "LANDFIRE disturbance", _landfire(), True),
     ]
     layers, groups = [], []
-    for group_id, name, members, collapsed in folders:
+    for group_id, name, members, collapsed in reversed(folders):
         groups.append({
             "id": group_id,
             "name": name,
@@ -194,7 +203,7 @@ def project_layers():
             "visible": True,
             "opacity": 1,
         })
-        for layer in members:
+        for layer in reversed(members):
             layer["groupId"] = group_id
             layers.append(layer)
     return layers, groups
