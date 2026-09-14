@@ -19,3 +19,4 @@
 - `general.md` also carries the 2026-09-13 fire snapshot: the PMTiles build, its weekly cache, sizes, and the layer metadata GeoLibre needs.
 - `general.md` also carries the 2026-09-14 Land status build: sources, the 34 minute weekly snapshot, the site size against the Pages limit, and the headless USGS artefact.
 - `general.md` also carries the 2026-09-14 parcel lookup and offline export: what each does, how they were tested live, and the GitHub ID token timeout.
+- `general.md` also carries the 2026-09-14 layer info card: the host patch, the ignored folder name, how it was tested, and the rows that overflow the panel.

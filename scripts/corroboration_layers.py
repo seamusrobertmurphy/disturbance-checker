@@ -200,8 +200,10 @@ def _landfire():
     return layers
 
 
-def _pmtiles_layer(layer_id, name, url, style, source_layer="fires"):
+def _pmtiles_layer(layer_id, name, url, style, source_layer="fires", about=None):
     # The fields GeoLibre's own Add Data dialog writes for a PMTiles address.
+    # `about` adds the publisher, source service, copy date and feature count
+    # that the Layers panel's hover card and right-click menu show.
     return {
         "id": layer_id,
         "name": name,
@@ -225,9 +227,15 @@ def _pmtiles_layer(layer_id, name, url, style, source_layer="fires"):
             "sourceKind": "pmtiles-url",
             "sourceLayers": [source_layer],
             "tileType": "vector",
+            **(about or {}),
         },
         "sourcePath": url,
     }
+
+
+def _about(publisher, service=None, date=None, count=None):
+    about = {"attribution": publisher, "serviceUrl": service, "snapshotDate": date, "featureCount": count}
+    return {key: value for key, value in about.items() if value is not None}
 
 
 FIRE_STYLES = {
@@ -240,6 +248,7 @@ FIRE_LABELS = {
     "wfigs-incidents": "WFIGS incident points",
     "nifc-history": "Interagency fire perimeter history",
 }
+FIRE_PUBLISHER = "National Interagency Fire Center"
 
 
 def _fire_records(snapshot_path, site):
@@ -252,7 +261,8 @@ def _fire_records(snapshot_path, site):
     snapshot = json.loads(snapshot_path.read_text())
     layers = []
     for key in ("wfigs-perimeters", "wfigs-incidents", "nifc-history"):
-        files = snapshot["datasets"].get(key, {}).get("files", {})
+        dataset = snapshot["datasets"].get(key, {})
+        files = dataset.get("files", {})
         parts = sorted((name.rsplit("-", 1)[1] for name in files),
                        key=lambda part: (part.isdigit(), part), reverse=True)
         for part in parts:
@@ -269,6 +279,7 @@ def _fire_records(snapshot_path, site):
                 f"{label} ({count:,})",
                 f"{site}snapshots/{name}.pmtiles",
                 dict(FIRE_STYLES[key]),
+                about=_about(FIRE_PUBLISHER, dataset.get("service"), snapshot["date"], count),
             ))
     return snapshot["date"], layers
 
@@ -315,6 +326,11 @@ def _land_status(fire_snapshot, roads_snapshot, site):
         ),
     ]
 
+    publishers = {
+        "padus-federal-fee": "U.S. Geological Survey, Protected Areas Database of the United States",
+        "padus-proclamation": "U.S. Geological Survey, Protected Areas Database of the United States",
+        "nps-boundaries": "National Park Service, Land Resources Division",
+    }
     labels = {
         "padus-federal-fee": ("PAD-US 4.1 federal fee lands", {"fillColor": "#2e7d32", "strokeColor": "#1b5e20", "fillOpacity": 0.3, "strokeWidth": 1}),
         "padus-proclamation": ("PAD-US 4.1 proclamation and planning boundaries", {"fillColor": "#1b5e20", "strokeColor": "#1b5e20", "fillOpacity": 0, "strokeWidth": 1.5}),
@@ -334,6 +350,7 @@ def _land_status(fire_snapshot, roads_snapshot, site):
                 f"{site}snapshots/{name}.pmtiles",
                 dict(style),
                 source_layer=dataset.get("layer", "areas"),
+                about=_about(publishers[key], dataset.get("service"), snapshot["date"], count),
             ))
     if roads_snapshot and Path(roads_snapshot).is_file():
         layers.append(_pmtiles_layer(
@@ -342,6 +359,10 @@ def _land_status(fire_snapshot, roads_snapshot, site):
             f"{site}snapshots/grip4-north-america-main-roads.pmtiles",
             {"strokeColor": "#f5f5f5", "fillColor": "#f5f5f5", "strokeWidth": 1},
             source_layer="roads",
+            about=_about(
+                "GLOBIO, Global Roads Inventory Project (GRIP4), CC0",
+                "https://www.globio.info/download-grip-dataset",
+            ),
         ))
     return layers
 

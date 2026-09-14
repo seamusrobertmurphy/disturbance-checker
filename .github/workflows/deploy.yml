@@ -153,6 +153,11 @@ jobs:
           # moves it to Opus 5 and lets Opus 5's thinking blocks survive a tool
           # call. Fails the build if the pinned maplibre-gl-geoagent changes.
           node ../plugin/scripts/patch-geoagent-models.mjs
+          # GeoLibre's Layers panel shows almost nothing about a layer. This
+          # adds a hover card and a right-click menu listing its folder, kind,
+          # source, copy date, feature count, zoom range and address. Fails
+          # the build if the pinned GeoLibre ever moves that markup.
+          node ../plugin/scripts/patch-layer-info.mjs
           npm run build
 
       - name: Fail if the plugin did not make it into the build output
