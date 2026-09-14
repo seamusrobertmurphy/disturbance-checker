@@ -211,18 +211,24 @@ jobs:
       #
       # Both are defaults, not impositions. An explicit ?theme=dark or
       # ?project=... still wins, and the in-app controls are untouched.
-      # The fire records come from ArcGIS feature services that cannot draw a
-      # map, so they are snapshotted into PMTiles by
-      # plugin/scripts/fire_snapshots.py and published beside the app. A
-      # snapshot is reused for the rest of its ISO week, so only the first
-      # deploy of a week pays the download. When the services do not answer,
-      # the cached snapshot is published with a warning and keeps its own date
-      # in the Layers panel.
-      - name: Week of the fire snapshot
+      # Fire records, national park boundaries and PAD-US come from ArcGIS
+      # feature services that cannot draw a map, so they are snapshotted into
+      # PMTiles by plugin/scripts/fire_snapshots.py and published beside the
+      # app. A snapshot is reused for the rest of its ISO week, so only the
+      # first deploy of a week pays the download. When the services do not
+      # answer, the cached snapshot is published with a warning and keeps its
+      # own date in the Layers panel.
+      #
+      # GRIP4 North America roads come from a single 525 MB file geodatabase
+      # published in 2023 for a 2018 dataset, so they are built once and kept
+      # under a fixed cache key. Only highways, primary, secondary and tertiary
+      # roads (GP_RTP 1 to 4) are tiled, to zoom 10, which keeps the file
+      # within what GitHub Pages will serve.
+      - name: Week of the snapshot
         id: week
         run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
 
-      - name: Restore the fire snapshot
+      - name: Restore the feature service snapshot
         id: fires
         uses: actions/cache@v4
         with:
@@ -230,29 +236,73 @@ jobs:
           key: fire-snapshot-${{ steps.week.outputs.week }}-${{ hashFiles('plugin/scripts/fire_snapshots.py') }}
           restore-keys: fire-snapshot-
 
-      - name: Build the fire snapshot
-        if: steps.fires.outputs.cache-hit != 'true'
+      - name: Restore the GRIP4 roads
+        id: roads
+        uses: actions/cache@v4
+        with:
+          path: roads-snapshot
+          key: grip4-region1-main-roads-z10-v1
+
+      - name: Build tippecanoe
+        if: steps.fires.outputs.cache-hit != 'true' || steps.roads.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get install -y --no-install-recommends libsqlite3-dev zlib1g-dev
+          sudo apt-get install -y --no-install-recommends libsqlite3-dev zlib1g-dev gdal-bin
           git clone --depth 1 --branch 2.79.0 https://github.com/felt/tippecanoe.git tippecanoe-src
           make -C tippecanoe-src -j"$(nproc)" tippecanoe
+
+      - name: Build the feature service snapshot
+        if: steps.fires.outputs.cache-hit != 'true'
+        run: |
           rm -rf fire-snapshot.new
           if python3 plugin/scripts/fire_snapshots.py fire-snapshot.new tippecanoe-src/tippecanoe; then
             rm -rf fire-snapshot
             mv fire-snapshot.new fire-snapshot
           elif [ -f fire-snapshot/snapshot.json ]; then
-            echo "::warning::The fire services did not answer; publishing the cached snapshot instead"
+            echo "::warning::A feature service did not answer; publishing the cached snapshot instead"
           else
-            echo "No fire snapshot could be built and none was cached"
+            echo "No snapshot could be built and none was cached"
             exit 1
           fi
 
-      - name: Publish the fire snapshot
+      # GRIP4 North America, Global Roads Inventory Project, region 1, CC0
+      # https://dataportaal.pbl.nl/downloads/GRIP4/GRIP4_Region1_vector_fgdb.zip
+      # https://www.globio.info/download-grip-dataset
+      # https://doi.org/10.1088/1748-9326/aabd42
+      # A failed roads build leaves the site deploying without the roads layer.
+      # The file is assembled in roads-build and moved into place only when
+      # complete, so a partial file is never cached under the fixed key.
+      - name: Build the GRIP4 roads
+        if: steps.roads.outputs.cache-hit != 'true'
+        continue-on-error: true
         run: |
-          target=geolibre/apps/geolibre-desktop/dist/fire-records
+          set -o pipefail
+          curl -sSL --retry 3 -o grip4.zip https://dataportaal.pbl.nl/downloads/GRIP4/GRIP4_Region1_vector_fgdb.zip
+          unzip -q grip4.zip -d grip4
+          rm grip4.zip
+          gdb=$(find grip4 -maxdepth 3 -name '*.gdb' | head -1)
+          rm -rf roads-build
+          mkdir -p roads-build
+          ogr2ogr -f GeoJSONSeq -select GP_RTP -where "GP_RTP BETWEEN 1 AND 4" /vsistdout/ "$gdb" \
+            | tippecanoe-src/tippecanoe -o roads-build/grip4-north-america-main-roads.pmtiles \
+                --force -l roads -z 10 --drop-densest-as-needed --extend-zooms-if-still-dropping
+          rm -rf grip4
+          size=$(stat -c %s roads-build/grip4-north-america-main-roads.pmtiles)
+          echo "{\"bytes\": $size, \"roads\": \"GP_RTP 1 to 4\", \"maxzoom\": 10}" > roads-build/roads.json
+          rm -rf roads-snapshot
+          mv roads-build roads-snapshot
+          du -sh roads-snapshot
+
+      - name: Publish the snapshots
+        run: |
+          target=geolibre/apps/geolibre-desktop/dist/snapshots
           mkdir -p "$target"
           cp fire-snapshot/*.pmtiles fire-snapshot/snapshot.json "$target/"
-          du -sh "$target"
+          if [ -f roads-snapshot/roads.json ]; then
+            cp roads-snapshot/*.pmtiles roads-snapshot/roads.json "$target/"
+          else
+            echo "::warning::No GRIP4 roads snapshot; the roads layer is left out"
+          fi
+          du -sh "$target" geolibre/apps/geolibre-desktop/dist
 
       - name: Open light, with the plugin already switched on
         env:
@@ -313,7 +363,9 @@ jobs:
           sys.path.insert(0, "plugin/scripts")
           from corroboration_layers import project_layers
           corroboration_layers, corroboration_groups = project_layers(
-              fire_snapshot="fire-snapshot/snapshot.json", site=site
+              fire_snapshot="fire-snapshot/snapshot.json",
+              roads_snapshot="roads-snapshot/roads.json",
+              site=site,
           )
 
           project = {

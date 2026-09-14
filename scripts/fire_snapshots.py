@@ -1,14 +1,15 @@
-"""Snapshot the national fire records into PMTiles for GeoLibre's Layers panel.
+"""Snapshot national feature services into PMTiles for GeoLibre's Layers panel.
 
-WFIGS perimeters, WFIGS incident points and the interagency historic perimeters
-are ArcGIS feature services with no map drawing endpoint, and GeoLibre can load
-one only by downloading every record at once. This script pages through each
+WFIGS perimeters, WFIGS incident points, the interagency historic perimeters,
+National Park Service boundaries and two PAD-US 4.1 layers are ArcGIS feature
+services with no map drawing endpoint, and GeoLibre can load one only by
+downloading every record at once. This script pages through each
 service, 2,000 records a request, writes one newline-delimited GeoJSON file per
 layer, and has tippecanoe turn each into a PMTiles archive the site serves
 beside the app. snapshot.json records the date and the feature count of every
 file, and the startup project names each layer with that date.
 
-Only the fields a verifier reads off a fire are kept, and polygon vertices are
+Only the fields a verifier reads off a feature are kept, and polygon vertices are
 thinned to 0.0001 degrees, about 10 m, before tiling.
 
 Usage: python3 fire_snapshots.py OUTPUT_DIR [TIPPECANOE]
@@ -26,14 +27,25 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 BASE = "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services"
-PAGE = 2000
+PADUS = "https://services.arcgis.com/v01gqwM5QqNysAAi/arcgis/rest/services"
+PADUS_FIELDS = {
+    "Unit_Nm": "name",
+    "Mang_Name": "manager",
+    "Mang_Type": "manager_type",
+    "Own_Name": "owner",
+    "Des_Tp": "designation",
+    "GAP_Sts": "gap_status",
+    "GIS_Acres": "acres",
+    "State_Nm": "state",
+}
 
 DATASETS = [
     {
         "key": "wfigs-perimeters",
         # WFIGS Interagency Fire Perimeters, all years
         # https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0
-        "service": "WFIGS_Interagency_Perimeters",
+        "url": f"{BASE}/WFIGS_Interagency_Perimeters/FeatureServer/0",
+        "layer": "fires",
         "fields": {
             "poly_IncidentName": "name",
             "poly_GISAcres": "acres",
@@ -52,7 +64,8 @@ DATASETS = [
         "key": "wfigs-incidents",
         # WFIGS Incident Locations, all years
         # https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Incident_Locations/FeatureServer/0
-        "service": "WFIGS_Incident_Locations",
+        "url": f"{BASE}/WFIGS_Incident_Locations/FeatureServer/0",
+        "layer": "fires",
         "fields": {
             "IncidentName": "name",
             "IncidentSize": "acres",
@@ -71,7 +84,8 @@ DATASETS = [
         "key": "nifc-history",
         # InterAgency Fire Perimeter History, all years
         # https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/InterAgencyFirePerimeterHistory_All_Years_View/FeatureServer/0
-        "service": "InterAgencyFirePerimeterHistory_All_Years_View",
+        "url": f"{BASE}/InterAgencyFirePerimeterHistory_All_Years_View/FeatureServer/0",
+        "layer": "fires",
         "fields": {
             "INCIDENT": "name",
             "GIS_ACRES": "acres",
@@ -84,7 +98,44 @@ DATASETS = [
         "split": None,
         "polygons": True,
     },
+    {
+        "key": "nps-boundaries",
+        # National Park Service Land Resources Division, NPS Boundary
+        # https://services1.arcgis.com/fBc8EJBxQRMcHlei/arcgis/rest/services/NPS_Land_Resources_Division_Boundary_and_Tract_Data_Service/FeatureServer/2
+        "url": "https://services1.arcgis.com/fBc8EJBxQRMcHlei/arcgis/rest/services/NPS_Land_Resources_Division_Boundary_and_Tract_Data_Service/FeatureServer/2",
+        "layer": "areas",
+        "fields": {"UNIT_NAME": "name", "UNIT_CODE": "code", "UNIT_TYPE": "type", "STATE": "state", "REGION": "region"},
+        "date_field": None,
+        "split": None,
+        "polygons": True,
+    },
+    {
+        "key": "padus-federal-fee",
+        # PAD-US 4.1, federal fee managers, authoritative
+        # https://services.arcgis.com/v01gqwM5QqNysAAi/arcgis/rest/services/Federal_Fee_Managers_Authoritative_PADUS/FeatureServer/0
+        # https://doi.org/10.5066/P96WBCHS
+        "url": f"{PADUS}/Federal_Fee_Managers_Authoritative_PADUS/FeatureServer/0",
+        "layer": "areas",
+        "page": 1000,
+        "fields": PADUS_FIELDS,
+        "date_field": None,
+        "split": None,
+        "polygons": True,
+    },
+    {
+        "key": "padus-proclamation",
+        # PAD-US 4.1, proclamation and other planning boundaries
+        # https://services.arcgis.com/v01gqwM5QqNysAAi/arcgis/rest/services/Proclamation_and_Other_Planning_Boundaries_PADUS/FeatureServer/0
+        # https://doi.org/10.5066/P96WBCHS
+        "url": f"{PADUS}/Proclamation_and_Other_Planning_Boundaries_PADUS/FeatureServer/0",
+        "layer": "areas",
+        "fields": PADUS_FIELDS,
+        "date_field": None,
+        "split": None,
+        "polygons": True,
+    },
 ]
+PAGE = 2000
 
 
 def _get(url, attempts=5):
@@ -98,8 +149,8 @@ def _get(url, attempts=5):
             time.sleep(5 * (attempt + 1))
 
 
-def _query(service, params):
-    return _get(f"{BASE}/{service}/FeatureServer/0/query?" + urllib.parse.urlencode(params))
+def _query(url, params):
+    return _get(f"{url}/query?" + urllib.parse.urlencode(params))
 
 
 def _page(dataset, offset):
@@ -108,16 +159,16 @@ def _page(dataset, offset):
         "outFields": ",".join(dataset["fields"]),
         "orderByFields": "OBJECTID",
         "resultOffset": offset,
-        "resultRecordCount": PAGE,
+        "resultRecordCount": dataset.get("page", PAGE),
         "outSR": 4326,
         "geometryPrecision": 5,
         "f": "geojson",
     }
     if dataset["polygons"]:
         params["maxAllowableOffset"] = 0.0001
-    page = _query(dataset["service"], params)
+    page = _query(dataset["url"], params)
     if "features" not in page:
-        raise RuntimeError(f"{dataset['service']} offset {offset}: {str(page)[:200]}")
+        raise RuntimeError(f"{dataset['url']} offset {offset}: {str(page)[:200]}")
     return page["features"]
 
 
@@ -131,8 +182,8 @@ def _year(dataset, props):
 
 
 def snapshot(dataset, out_dir, tippecanoe):
-    count = _query(dataset["service"], {"where": "1=1", "returnCountOnly": "true", "f": "json"})["count"]
-    offsets = list(range(0, count, PAGE))
+    count = _query(dataset["url"], {"where": "1=1", "returnCountOnly": "true", "f": "json"})["count"]
+    offsets = list(range(0, count, dataset.get("page", PAGE)))
     files, counts = {}, Counter()
 
     def batches():
@@ -168,14 +219,14 @@ def snapshot(dataset, out_dir, tippecanoe):
     for name in sorted(counts):
         source = out_dir / f"{name}.geojsonl"
         target = out_dir / f"{name}.pmtiles"
-        command = [tippecanoe, "-o", str(target), "--force", "-l", "fires", "-z", "12",
+        command = [tippecanoe, "-o", str(target), "--force", "-l", dataset["layer"], "-z", "12",
                    "--drop-densest-as-needed", "--extend-zooms-if-still-dropping",
                    "--read-parallel", str(source)]
         subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         source.unlink()
         written[name] = {"features": counts[name], "bytes": target.stat().st_size}
-    print(f"{dataset['service']}: {count:,} records, {len(written)} files")
-    return {"service": f"{BASE}/{dataset['service']}/FeatureServer/0", "records": count, "files": written}
+    print(f"{dataset['url']}: {count:,} records, {len(written)} files")
+    return {"service": dataset["url"], "layer": dataset["layer"], "records": count, "files": written}
 
 
 def main():

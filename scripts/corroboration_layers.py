@@ -19,10 +19,12 @@ lets the areas draw from zoom 3. At that dpi the point symbols shrink below a
 pixel, so the damage points, published for 2023 to 2025 only, are separate
 layers at the default dpi that draw from zoom 12.
 
-WFIGS perimeters, WFIGS incident points and the interagency historic
-perimeters are feature services with no map drawing endpoint. The deploy
-snapshots them into PMTiles with fire_snapshots.py, publishes the files under
-fire-records/, and lists them here from that snapshot's snapshot.json, dated.
+WFIGS perimeters, WFIGS incident points, the interagency historic perimeters,
+National Park Service boundaries and two PAD-US 4.1 layers are feature services
+with no map drawing endpoint. The deploy snapshots them into PMTiles with
+fire_snapshots.py, snapshots GRIP4 North America main roads from its published
+file geodatabase, publishes both under snapshots/, and lists them here from
+snapshot.json and roads.json.
 """
 
 import json
@@ -198,7 +200,7 @@ def _landfire():
     return layers
 
 
-def _pmtiles_layer(layer_id, name, url, style):
+def _pmtiles_layer(layer_id, name, url, style, source_layer="fires"):
     # The fields GeoLibre's own Add Data dialog writes for a PMTiles address.
     return {
         "id": layer_id,
@@ -206,7 +208,7 @@ def _pmtiles_layer(layer_id, name, url, style):
         "type": "pmtiles",
         "source": {
             "sourceId": layer_id,
-            "sourceLayers": ["fires"],
+            "sourceLayers": [source_layer],
             "tileType": "vector",
             "type": "vector",
             "url": url,
@@ -217,11 +219,11 @@ def _pmtiles_layer(layer_id, name, url, style):
         "metadata": {
             "corroboration": True,
             "externalNativeLayer": True,
-            "nativeLayerIds": [f"{layer_id}-fires-{kind}" for kind in ("fill", "line", "circle")],
+            "nativeLayerIds": [f"{layer_id}-{source_layer}-{kind}" for kind in ("fill", "line", "circle")],
             "pickable": True,
             "sourceId": layer_id,
             "sourceKind": "pmtiles-url",
-            "sourceLayers": ["fires"],
+            "sourceLayers": [source_layer],
             "tileType": "vector",
         },
         "sourcePath": url,
@@ -265,13 +267,75 @@ def _fire_records(snapshot_path, site):
             layers.append(_pmtiles_layer(
                 f"corroboration-{name}",
                 f"{label} ({count:,})",
-                f"{site}fire-records/{name}.pmtiles",
+                f"{site}snapshots/{name}.pmtiles",
                 dict(FIRE_STYLES[key]),
             ))
     return snapshot["date"], layers
 
 
-def project_layers(fire_snapshot=None, site=""):
+def _land_status(fire_snapshot, roads_snapshot, site):
+    """Federal, tribal, protected and park land, and main roads, for overlap checks."""
+    from pathlib import Path
+
+    # BLM National Surface Management Agency, cached, without private and unknown land
+    # https://gis.blm.gov/arcgis/rest/services/lands/BLM_Natl_SMA_Cached_without_PriUnk/MapServer
+    sma = "https://gis.blm.gov/arcgis/rest/services/lands/BLM_Natl_SMA_Cached_without_PriUnk/MapServer"
+    federal = _layer(
+        "corroboration-blm-sma",
+        "Federal and state land, surface management agency (BLM)",
+        sma,
+        f"{sma}/tile/{{z}}/{{y}}/{{x}}",
+        "Bureau of Land Management",
+    )
+    # Cached tiles are addressed by {z}/{y}/{x}, so this layer is a true XYZ layer.
+    federal["type"] = "xyz"
+    federal["source"]["maxzoom"] = 14
+    # BIA American Indian and Alaska Native Land Area Representation
+    # https://biamaps.geoplatform.gov/server/rest/services/DivLTR/BIA_AIAN_National_LAR/MapServer
+    lar = "https://biamaps.geoplatform.gov/server/rest/services/DivLTR/BIA_AIAN_National_LAR/MapServer"
+    layers = [
+        federal,
+        _layer(
+            "corroboration-bia-lar",
+            "Tribal lands, American Indian and Alaska Native land areas (BIA)",
+            lar,
+            _mapserver(lar, "0"),
+            "Bureau of Indian Affairs, Office of Trust Services, Division of Land Titles and Records",
+        ),
+    ]
+
+    labels = {
+        "padus-federal-fee": ("PAD-US 4.1 federal fee lands", {"fillColor": "#2e7d32", "strokeColor": "#1b5e20", "fillOpacity": 0.3, "strokeWidth": 1}),
+        "padus-proclamation": ("PAD-US 4.1 proclamation and planning boundaries", {"fillColor": "#1b5e20", "strokeColor": "#1b5e20", "fillOpacity": 0, "strokeWidth": 1.5}),
+        "nps-boundaries": ("National park boundaries (NPS)", {"fillColor": "#6d4c41", "strokeColor": "#3e2723", "fillOpacity": 0.3, "strokeWidth": 1}),
+    }
+    if fire_snapshot and Path(fire_snapshot).is_file():
+        snapshot = json.loads(Path(fire_snapshot).read_text())
+        for key, (label, style) in labels.items():
+            dataset = snapshot["datasets"].get(key)
+            if not dataset:
+                continue
+            name = f"{key}-all"
+            count = dataset["files"][name]["features"]
+            layers.append(_pmtiles_layer(
+                f"corroboration-{key}",
+                f"{label} ({count:,}, snapshot {snapshot['date']})",
+                f"{site}snapshots/{name}.pmtiles",
+                dict(style),
+                source_layer=dataset.get("layer", "areas"),
+            ))
+    if roads_snapshot and Path(roads_snapshot).is_file():
+        layers.append(_pmtiles_layer(
+            "corroboration-grip4-roads",
+            "Main roads, North America, highways to tertiary (GRIP4, 2018)",
+            f"{site}snapshots/grip4-north-america-main-roads.pmtiles",
+            {"strokeColor": "#f5f5f5", "fillColor": "#f5f5f5", "strokeWidth": 1},
+            source_layer="roads",
+        ))
+    return layers
+
+
+def project_layers(fire_snapshot=None, roads_snapshot=None, site=""):
     """Return (layers, layer_groups) for a GeoLibre project.
 
     GeoLibre lists the last layer in the array at the top of the Layers panel,
@@ -280,6 +344,7 @@ def project_layers(fire_snapshot=None, site=""):
     """
     folders = [
         ("corroboration-group-ids", "Insect and disease survey", _insect_and_disease(), False),
+        ("corroboration-group-land", "Land status", _land_status(fire_snapshot, roads_snapshot, site), False),
     ]
     fires = _fire_records(fire_snapshot, site) if fire_snapshot else None
     if fires:
