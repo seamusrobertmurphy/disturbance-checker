@@ -9,10 +9,15 @@ nothing is copied into this site and every layer is as current as its service.
 On 2026-09-13 every layer answered a browser request from
 https://prototype-tools.github.io with a CORS header and drew a tile, a zoom 4
 tile over the western United States for each layer except the Insect and
-Disease Survey, which drew at zoom 12 over a damage area of its year. The Forest
-Service caps that survey at 1:250,000, so those layers start drawing at zoom 11,
-and the national Tree Canopy Assessment mortality layer, which is derived from
-the same survey, sits beside them for the national view.
+Disease Survey, which drew at zoom 12 over a damage area of its year.
+
+The Forest Service draws that survey only at 1:250,000 or larger, and a zoom 11
+web map tile is about 1:273,000 at the default 96 dpi, so tiles came back blank
+until zoom 12. The server computes scale from the requested dpi, and the damage
+area layers ask for dpi 0.2, which puts a zoom 3 tile at about 1:145,600 and
+lets the areas draw from zoom 3. At that dpi the point symbols shrink below a
+pixel, so the damage points, published for 2023 to 2025 only, are separate
+layers at the default dpi that draw from zoom 12.
 
 WFIGS perimeters, WFIGS incident points and the interagency historic
 perimeters are feature services with no map drawing endpoint. The deploy
@@ -81,16 +86,27 @@ def _insect_and_disease():
     # USDA Forest Service Insect and Disease Survey, damage points (layer 0) and areas (layer 1)
     # https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_InsectandDiseaseSurvey_01/MapServer
     ids = "https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_InsectandDiseaseSurvey_01/MapServer"
+    attribution = "USDA Forest Service, Forest Health Protection and its partners"
     for year in range(2025, 2020, -1):
-        where = f"survey_year = {year}"
         layers.append(
             _layer(
                 f"corroboration-ids-{year}",
-                f"Insect and disease survey {year}, damage areas and points (draws from zoom 11)",
+                f"Insect and disease survey {year}, damage areas",
                 ids,
-                _mapserver(ids, "0,1", {"0": where, "1": where}),
-                "USDA Forest Service, Forest Health Protection and its partners",
-                minzoom=11,
+                _mapserver(ids, "1", {"1": f"survey_year = {year}"}) + "&dpi=0.2",
+                attribution,
+                minzoom=3,
+            )
+        )
+    for year in range(2025, 2022, -1):
+        layers.append(
+            _layer(
+                f"corroboration-ids-points-{year}",
+                f"Insect and disease survey {year}, damage points (draws from zoom 12)",
+                ids,
+                _mapserver(ids, "0", {"0": f"survey_year = {year}"}),
+                attribution,
+                minzoom=12,
             )
         )
     return layers
