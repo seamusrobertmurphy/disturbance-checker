@@ -17,3 +17,4 @@
 - `general.md` also carries the 2026-09-13 GeoAgent model patch: where the latest-model default really lives, the thinking-block replay fix, and that no live chat has tested it.
 - `general.md` also carries the 2026-09-13 corroboration layer list: why the layers are typed WMS, panel ordering, the survey zoom cap, and the three fire feature services still missing.
 - `general.md` also carries the 2026-09-13 fire snapshot: the PMTiles build, its weekly cache, sizes, and the layer metadata GeoLibre needs.
+- `general.md` also carries the 2026-09-14 Land status build: sources, the 34 minute weekly snapshot, the site size against the Pages limit, and the headless USGS artefact.
