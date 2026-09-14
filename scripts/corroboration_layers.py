@@ -330,7 +330,7 @@ def _land_status(fire_snapshot, roads_snapshot, site):
             count = dataset["files"][name]["features"]
             layers.append(_pmtiles_layer(
                 f"corroboration-{key}",
-                f"{label} ({count:,}, snapshot {snapshot['date']})",
+                f"{label} ({count:,})",
                 f"{site}snapshots/{name}.pmtiles",
                 dict(style),
                 source_layer=dataset.get("layer", "areas"),
@@ -359,12 +359,12 @@ def project_layers(fire_snapshot=None, roads_snapshot=None, site=""):
     ]
     fires = _fire_records(fire_snapshot, site) if fire_snapshot else None
     if fires:
-        date, fire_layers = fires
-        folders.append(("corroboration-group-fires", f"WFIGS records, snapshot {date}", fire_layers, False))
+        _, fire_layers = fires
+        folders.append(("corroboration-group-fires", "WFIGS records", fire_layers, False))
     folders += [
         ("corroboration-group-hazard", "Wildfire hazard", _wildfire_hazard(), False),
         ("corroboration-group-mtbs", "MTBS", _mtbs(), True),
-        ("corroboration-group-landfire", "LANDFIRE disturbance", _landfire(), True),
+        ("corroboration-group-landfire", "LANDFIRE", _landfire(), True),
     ]
     layers, groups = [], []
     for group_id, name, members, _ in reversed(folders):
