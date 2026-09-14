@@ -284,7 +284,7 @@ def project_layers(fire_snapshot=None, site=""):
     fires = _fire_records(fire_snapshot, site) if fire_snapshot else None
     if fires:
         date, fire_layers = fires
-        folders.append(("corroboration-group-fires", f"Fire records, snapshot {date}", fire_layers, False))
+        folders.append(("corroboration-group-fires", f"WFIGS records, snapshot {date}", fire_layers, False))
     folders += [
         ("corroboration-group-hazard", "Wildfire hazard", _wildfire_hazard(), False),
         ("corroboration-group-mtbs", "MTBS", _mtbs(), True),
