@@ -25,6 +25,11 @@ with no map drawing endpoint. The deploy snapshots them into PMTiles with
 fire_snapshots.py, snapshots GRIP4 North America main roads from its published
 file geodatabase, publishes both under snapshots/, and lists them here from
 snapshot.json and roads.json.
+
+Registered carbon project boundaries come from the global database of
+Karnik et al. (2024), https://doi.org/10.5281/zenodo.11459391, which
+carbon_projects.py tiles into one PMTiles file per registry, listed here from
+carbon.json.
 """
 
 import json
@@ -233,8 +238,9 @@ def _pmtiles_layer(layer_id, name, url, style, source_layer="fires", about=None)
     }
 
 
-def _about(publisher, service=None, date=None, count=None):
-    about = {"attribution": publisher, "serviceUrl": service, "snapshotDate": date, "featureCount": count}
+def _about(publisher, service=None, date=None, count=None, description=None):
+    about = {"attribution": publisher, "serviceUrl": service, "snapshotDate": date,
+             "featureCount": count, "description": description}
     return {key: value for key, value in about.items() if value is not None}
 
 
@@ -282,6 +288,45 @@ def _fire_records(snapshot_path, site):
                 about=_about(FIRE_PUBLISHER, dataset.get("service"), snapshot["date"], count),
             ))
     return snapshot["date"], layers
+
+
+CARBON_STYLES = {
+    "acr": "#1e88e5",
+    "car": "#8e24aa",
+    "verra": "#43a047",
+    "gold-standard": "#fbc02d",
+    "ecoregistry": "#f4511e",
+    "biocarbon": "#6d4c41",
+}
+
+
+def _carbon_projects(carbon_snapshot, site):
+    """One layer per registry from carbon_projects.py, or an empty list when it was not built."""
+    from pathlib import Path
+
+    if not carbon_snapshot or not Path(carbon_snapshot).is_file():
+        return []
+    carbon = json.loads(Path(carbon_snapshot).read_text())
+    layers = []
+    for key, entry in carbon["registries"].items():
+        colour = CARBON_STYLES.get(key, "#ffffff")
+        layers.append(_pmtiles_layer(
+            f"corroboration-carbon-{key}",
+            f"{entry['registry']} ({entry['features']:,})",
+            f"{site}snapshots/carbon-{key}.pmtiles",
+            {"fillColor": colour, "strokeColor": colour, "fillOpacity": 0.2, "strokeWidth": 1.5, "circleRadius": 4},
+            source_layer="projects",
+            about=_about(
+                "Karnik, Kilbride, Goodbody, Ross and Ayrey (2024), CC BY 4.0",
+                carbon["source"],
+                count=entry["features"],
+                description=(
+                    "Registered project areas, not a census of every project. "
+                    f"Entries up to {carbon['entered_to']}; projects known only by location are points."
+                ),
+            ),
+        ))
+    return layers
 
 
 def _land_status(fire_snapshot, roads_snapshot, site):
@@ -367,14 +412,17 @@ def _land_status(fire_snapshot, roads_snapshot, site):
     return layers
 
 
-def project_layers(fire_snapshot=None, roads_snapshot=None, site=""):
+def project_layers(fire_snapshot=None, roads_snapshot=None, site="", carbon_snapshot=None):
     """Return (layers, layer_groups) for a GeoLibre project.
 
     GeoLibre lists the last layer in the array at the top of the Layers panel,
     so the folders and the layers inside them are written bottom first, which
-    leaves the survey folder on top with its newest year first.
+    leaves the carbon projects folder on top, then the survey folder with its
+    newest year first. A folder with no layers, such as carbon projects when
+    its build failed, is left out.
     """
     folders = [
+        ("corroboration-group-carbon", "Carbon projects", _carbon_projects(carbon_snapshot, site), False),
         ("corroboration-group-ids", "Insect and disease survey", _insect_and_disease(), False),
         ("corroboration-group-land", "Land status", _land_status(fire_snapshot, roads_snapshot, site), False),
     ]
@@ -387,6 +435,7 @@ def project_layers(fire_snapshot=None, roads_snapshot=None, site=""):
         ("corroboration-group-mtbs", "MTBS", _mtbs(), True),
         ("corroboration-group-landfire", "LANDFIRE", _landfire(), True),
     ]
+    folders = [folder for folder in folders if folder[2]]
     layers, groups = [], []
     for group_id, name, members, _ in reversed(folders):
         groups.append({

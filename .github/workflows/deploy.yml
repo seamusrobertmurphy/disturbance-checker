@@ -229,6 +229,11 @@ jobs:
       # under a fixed cache key. Only highways, primary, secondary and tertiary
       # roads (GP_RTP 1 to 4) are tiled, to zoom 10, which keeps the file
       # within what GitHub Pages will serve.
+      #
+      # Registered carbon project boundaries come from Karnik et al. (2024), a
+      # 1.7 GB set of GeoPackages on Zenodo that has not changed since June
+      # 2024, so they are tiled once per version of carbon_projects.py and
+      # kept. If Zenodo does not answer, the site deploys without that folder.
       - name: Week of the snapshot
         id: week
         run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
@@ -248,8 +253,15 @@ jobs:
           path: roads-snapshot
           key: grip4-region1-main-roads-z10-v1
 
+      - name: Restore the carbon project boundaries
+        id: carbon
+        uses: actions/cache@v4
+        with:
+          path: carbon-snapshot
+          key: carbon-projects-zenodo-11459391-${{ hashFiles('plugin/scripts/carbon_projects.py') }}
+
       - name: Build tippecanoe
-        if: steps.fires.outputs.cache-hit != 'true' || steps.roads.outputs.cache-hit != 'true'
+        if: steps.fires.outputs.cache-hit != 'true' || steps.roads.outputs.cache-hit != 'true' || steps.carbon.outputs.cache-hit != 'true'
         run: |
           sudo apt-get install -y --no-install-recommends libsqlite3-dev zlib1g-dev gdal-bin
           git clone --depth 1 --branch 2.79.0 https://github.com/felt/tippecanoe.git tippecanoe-src
@@ -297,6 +309,20 @@ jobs:
           mv roads-build roads-snapshot
           du -sh roads-snapshot
 
+      # A global database of nature-based carbon offset project boundaries, Karnik et al. (2024), CC BY 4.0
+      # https://doi.org/10.5281/zenodo.11459391
+      - name: Build the carbon project boundaries
+        if: steps.carbon.outputs.cache-hit != 'true'
+        run: |
+          rm -rf carbon-build
+          if python3 plugin/scripts/carbon_projects.py carbon-build tippecanoe-src/tippecanoe; then
+            rm -rf carbon-snapshot
+            mv carbon-build carbon-snapshot
+            du -sh carbon-snapshot
+          else
+            echo "::warning::The carbon project boundaries could not be built; that folder is left out"
+          fi
+
       - name: Publish the snapshots
         run: |
           target=geolibre/apps/geolibre-desktop/dist/snapshots
@@ -306,6 +332,9 @@ jobs:
             cp roads-snapshot/*.pmtiles roads-snapshot/roads.json "$target/"
           else
             echo "::warning::No GRIP4 roads snapshot; the roads layer is left out"
+          fi
+          if [ -f carbon-snapshot/carbon.json ]; then
+            cp carbon-snapshot/*.pmtiles carbon-snapshot/carbon.json "$target/"
           fi
           du -sh "$target" geolibre/apps/geolibre-desktop/dist
 
@@ -370,6 +399,7 @@ jobs:
           corroboration_layers, corroboration_groups = project_layers(
               fire_snapshot="fire-snapshot/snapshot.json",
               roads_snapshot="roads-snapshot/roads.json",
+              carbon_snapshot="carbon-snapshot/carbon.json",
               site=site,
           )
 
