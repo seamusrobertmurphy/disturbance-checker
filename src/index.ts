@@ -1,6 +1,8 @@
 import "./style.css";
 import { HelpLibrary } from "./help/panel";
+import { renderOfflinePanel } from "./export/panel";
 import { exposeNotebookLayers } from "./notebook/layers";
+import { renderParcelPanel } from "./parcels/panel";
 import { AUDIENCE_LABELS, AUDIENCE_ORDER, guidesFor } from "./help/registry";
 import { DisturbancePanel } from "./panel/panel";
 import { State, createState, fromPersisted, toPersisted } from "./state";
@@ -12,6 +14,8 @@ import {
 
 const PANEL_ID = "tuvsud-disturbance-check";
 const HELP_PANEL_ID = "tuvsud-disturbance-check-help";
+const OFFLINE_PANEL_ID = `${PANEL_ID}-offline`;
+const PARCEL_PANEL_ID = `${PANEL_ID}-parcels`;
 const TOOLBAR_MENU_ID = "tuvsud-disturbance-check-menu";
 
 let state: State = createState();
@@ -131,6 +135,31 @@ const plugin: GeoLibrePlugin = {
       );
     }
 
+    // Click-to-look-up parcels from the statewide parcel services.
+    if (app.registerFloatingPanel) {
+      teardown.push(
+        app.registerFloatingPanel({
+          id: PARCEL_PANEL_ID,
+          title: "Parcel lookup",
+          defaultWidth: 380,
+          render: (container: HTMLElement) => renderParcelPanel(container, app),
+        }),
+      );
+    }
+
+    // The offline file of the project area, built from the layers switched on.
+    if (app.registerFloatingPanel) {
+      teardown.push(
+        app.registerFloatingPanel({
+          id: OFFLINE_PANEL_ID,
+          title: "Offline map of the area",
+          defaultWidth: 380,
+          render: (container: HTMLElement) =>
+            renderOfflinePanel(container, app, () => ({ aoi: state.aoi, aoiLabel: state.aoiLabel })),
+        }),
+      );
+    }
+
     if (app.registerToolbarMenu) {
       teardown.push(
         app.registerToolbarMenu({
@@ -143,6 +172,20 @@ const plugin: GeoLibrePlugin = {
               onSelect: () => {
                 app.openRightPanel?.(PANEL_ID);
                 app.openFloatingPanel?.(PANEL_ID);
+              },
+            },
+            {
+              id: "parcel-lookup",
+              label: "Parcel lookup",
+              onSelect: () => {
+                app.openFloatingPanel?.(PARCEL_PANEL_ID);
+              },
+            },
+            {
+              id: "offline-map",
+              label: "Offline map of the area",
+              onSelect: () => {
+                app.openFloatingPanel?.(OFFLINE_PANEL_ID);
               },
             },
             { type: "separator", id: "tool-sep" },
@@ -175,6 +218,8 @@ const plugin: GeoLibrePlugin = {
     }
     app.unregisterRightPanel?.(PANEL_ID);
     app.unregisterFloatingPanel?.(HELP_PANEL_ID);
+    app.unregisterFloatingPanel?.(OFFLINE_PANEL_ID);
+    app.unregisterFloatingPanel?.(PARCEL_PANEL_ID);
     app.unregisterToolbarMenu?.(TOOLBAR_MENU_ID);
   },
 

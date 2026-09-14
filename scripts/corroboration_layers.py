@@ -293,8 +293,19 @@ def _land_status(fire_snapshot, roads_snapshot, site):
     # BIA American Indian and Alaska Native Land Area Representation
     # https://biamaps.geoplatform.gov/server/rest/services/DivLTR/BIA_AIAN_National_LAR/MapServer
     lar = "https://biamaps.geoplatform.gov/server/rest/services/DivLTR/BIA_AIAN_National_LAR/MapServer"
+    # BLM National PLSS CadNSDI, townships (layer 1, from 1:4,000,000) and sections (layer 2, from 1:500,000)
+    # https://gis.blm.gov/arcgis/rest/services/Cadastral/BLM_Natl_PLSS_CadNSDI/MapServer
+    plss = "https://gis.blm.gov/arcgis/rest/services/Cadastral/BLM_Natl_PLSS_CadNSDI/MapServer"
     layers = [
         federal,
+        _layer(
+            "corroboration-blm-plss",
+            "PLSS townships from zoom 8 and sections from zoom 11 (BLM CadNSDI)",
+            plss,
+            _mapserver(plss, "1,2"),
+            "Bureau of Land Management, National PLSS CadNSDI",
+            minzoom=8,
+        ),
         _layer(
             "corroboration-bia-lar",
             "Tribal lands, American Indian and Alaska Native land areas (BIA)",
