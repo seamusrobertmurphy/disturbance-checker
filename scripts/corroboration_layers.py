@@ -1,8 +1,8 @@
 """Corroboration layers listed in GeoLibre's Layers panel when the site opens.
 
 The deploy writes these into the startup project, one folder per source, every
-layer switched off, so an operator can switch any of them on and read the
-national picture without running a check. Each layer is a raster drawn by the
+layer switched on and every folder collapsed, so the national picture is on the
+map when the site opens and a whole source is hidden with its folder's eye. Each layer is a raster drawn by the
 publisher's own map or image service, one 256 pixel image per map tile, so
 nothing is copied into this site and every layer is as current as its service.
 
@@ -64,7 +64,7 @@ def _layer(layer_id, name, url, tiles, attribution, minzoom=None):
         "name": name,
         "type": "wms",
         "source": source,
-        "visible": False,
+        "visible": True,
         "opacity": 0.8,
         "metadata": {"corroboration": True, "serviceUrl": url},
     }
@@ -211,7 +211,7 @@ def _pmtiles_layer(layer_id, name, url, style):
             "type": "vector",
             "url": url,
         },
-        "visible": False,
+        "visible": True,
         "opacity": 1,
         "style": style,
         "metadata": {
@@ -291,11 +291,11 @@ def project_layers(fire_snapshot=None, site=""):
         ("corroboration-group-landfire", "LANDFIRE disturbance", _landfire(), True),
     ]
     layers, groups = [], []
-    for group_id, name, members, collapsed in reversed(folders):
+    for group_id, name, members, _ in reversed(folders):
         groups.append({
             "id": group_id,
             "name": name,
-            "collapsed": collapsed,
+            "collapsed": True,
             "visible": True,
             "opacity": 1,
         })
