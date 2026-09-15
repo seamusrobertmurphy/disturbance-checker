@@ -281,7 +281,10 @@ function serviceLookups(layers: ServiceLayer[], lookup: Lookup): Array<Promise<S
   if (sma) {
     tasks.push(mapIdentify(serviceBase(sma.tiles), "1", lookup).then((results) => {
       const a = results.find((r) => r.layerId === 1)?.attributes;
-      return a ? { heading: "Surface management agency (BLM)", entries: [{ title: str(a.ADMIN_UNIT_NAME) ?? "Unnamed", rows: [["Unit", str(a.ADMIN_UNIT_TYPE)]] as Rows }] } : null;
+      if (!a) return null;
+      const name = str(a.ADMIN_UNIT_NAME) ?? str(a.ADMIN_UNIT_TYPE) ?? str(a.ADMIN_AGENCY_CODE);
+      if (!name) return null;
+      return { heading: "Surface management agency (BLM)", entries: [{ title: name, rows: [["Unit", str(a.ADMIN_UNIT_TYPE) === name ? null : str(a.ADMIN_UNIT_TYPE)]] as Rows }] };
     }));
   }
 
@@ -382,7 +385,8 @@ function tileSections(map: InfoMap, at: MapMouse): Section[] {
 
 // --- Card -----------------------------------------------------------------
 
-function render(card: HTMLElement, sections: Section[]): void {
+/** Draws the sections. The hover card, which cannot scroll, keeps two facts per record. */
+function render(card: HTMLElement, sections: Section[], compact = false): void {
   const parts: HTMLElement[] = [];
   for (const section of sections) {
     const heading = document.createElement("div");
@@ -396,7 +400,7 @@ function render(card: HTMLElement, sections: Section[]): void {
       title.className = "dc-survey-title";
       title.textContent = entry.title;
       block.append(title);
-      const rows = entry.rows.filter(([, value]) => value);
+      const rows = entry.rows.filter(([, value]) => value).slice(0, compact ? 2 : undefined);
       if (rows.length) {
         const table = document.createElement("table");
         for (const [name, value] of rows) {
@@ -486,7 +490,13 @@ export function attachLayerInfo(app: GeoLibreAppAPI): () => void {
       hoverController = controller;
       const found = await lookUp(map!, event, controller.signal).catch(() => null);
       if (controller.signal.aborted || !found || found.layersOn === 0) return;
-      if (found.sections.length) render(hover, found.sections);
+      if (found.sections.length) {
+        render(hover, found.sections, true);
+        const hint = document.createElement("div");
+        hint.className = "dc-survey-muted";
+        hint.textContent = "Right click for every detail.";
+        hover.append(hint);
+      }
       else hover.textContent = `Nothing recorded here in the ${found.layersOn} layers switched on.`;
       hover.hidden = false;
       place(hover, event.point.x, event.point.y, "right");
