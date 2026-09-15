@@ -99,6 +99,30 @@ DATASETS = [
         "polygons": True,
     },
     {
+        "key": "ids-points",
+        # USDA Forest Service Insect and Disease Survey, damage points (layer 0)
+        # https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_InsectandDiseaseSurvey_01/MapServer/0
+        # The service draws points only at 1:250,000 or larger, so they are copied
+        # here and drawn from tiles at every zoom instead.
+        "url": "https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_InsectandDiseaseSurvey_01/MapServer/0",
+        "layer": "damage",
+        "fields": {
+            "survey_year": "year",
+            "dca_common_name": "agent",
+            "host": "host",
+            "damage_type": "damage",
+            "number_of_trees_count_range": "trees",
+            "tree_count": "tree_count",
+            "created_date": "recorded",
+            "label": "label",
+            "notes": "notes",
+        },
+        "date_field": None,
+        "split": "year",
+        "first_year": 2023,
+        "polygons": False,
+    },
+    {
         "key": "nps-boundaries",
         # National Park Service Land Resources Division, NPS Boundary
         # https://services1.arcgis.com/fBc8EJBxQRMcHlei/arcgis/rest/services/NPS_Land_Resources_Division_Boundary_and_Tract_Data_Service/FeatureServer/2
@@ -198,9 +222,10 @@ def snapshot(dataset, out_dir, tippecanoe):
                 continue
             props = {new: feature["properties"].get(old) for old, new in dataset["fields"].items()}
             year = _year(dataset, props)
-            if isinstance(props.get("discovered"), (int, float)):
-                props["discovered"] = datetime.fromtimestamp(
-                    props["discovered"] / 1000, tz=timezone.utc).date().isoformat()
+            for field in ("discovered", "recorded"):
+                if isinstance(props.get(field), (int, float)):
+                    props[field] = datetime.fromtimestamp(
+                        props[field] / 1000, tz=timezone.utc).date().isoformat()
             props["year"] = year
             if dataset["split"] == "year":
                 part = str(year) if isinstance(year, int) and year >= dataset["first_year"] else "earlier"

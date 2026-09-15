@@ -1,10 +1,12 @@
 """Corroboration layers listed in GeoLibre's Layers panel when the site opens.
 
-The deploy writes these into the startup project, one folder per source, every
-layer switched on and every folder collapsed, so the national picture is on the
-map when the site opens and a whole source is hidden with its folder's eye. Each layer is a raster drawn by the
-publisher's own map or image service, one 256 pixel image per map tile, so
-nothing is copied into this site and every layer is as current as its service.
+The deploy writes these into the startup project, one folder per source and
+every folder collapsed. Only the carbon projects are drawn when the site opens,
+because with every layer on each pan sent hundreds of image requests to the
+federal services at once. The rest are switched on from the Layers panel, a
+layer or a whole folder at a time. Most are rasters drawn by the publisher's own
+map or image service, one 256 pixel image per map tile, so nothing is copied
+into this site and every layer is as current as its service.
 
 On 2026-09-13 every layer answered a browser request from
 https://prototype-tools.github.io with a CORS header and drew a tile, a zoom 4
@@ -77,7 +79,7 @@ def _layer(layer_id, name, url, tiles, attribution, minzoom=None):
     }
 
 
-def _insect_and_disease():
+def _insect_and_disease(fire_snapshot=None, site=""):
     # Tree Canopy Assessment, tree mortality 0 to 5 years, derived from the aerial survey
     # https://imagery.geoplatform.gov/iipp/rest/services/Ecosystems/USFS_EDW_TCA_TreeMortality_0_5/ImageServer
     tca = "https://imagery.geoplatform.gov/iipp/rest/services/Ecosystems/USFS_EDW_TCA_TreeMortality_0_5/ImageServer"
@@ -105,17 +107,34 @@ def _insect_and_disease():
                 minzoom=3,
             )
         )
-    for year in range(2025, 2022, -1):
-        layers.append(
-            _layer(
-                f"corroboration-ids-points-{year}",
-                f"Insect and disease survey {year}, damage points (draws from zoom 12)",
-                ids,
-                _mapserver(ids, "0", {"0": f"survey_year = {year}"}),
-                attribution,
-                minzoom=12,
-            )
-        )
+    # The service draws the damage points only at 1:250,000 or larger, so they
+    # are copied into PMTiles by fire_snapshots.py and drawn from tiles here,
+    # which puts them on the map at every zoom.
+    layers += _damage_points(fire_snapshot, site, attribution)
+    return layers
+
+
+def _damage_points(fire_snapshot, site, attribution):
+    from pathlib import Path
+
+    if not fire_snapshot or not Path(fire_snapshot).is_file():
+        return []
+    snapshot = json.loads(Path(fire_snapshot).read_text())
+    dataset = snapshot["datasets"].get("ids-points")
+    if not dataset:
+        return []
+    layers = []
+    for name in sorted(dataset["files"], reverse=True):
+        year = name.rsplit("-", 1)[1]
+        count = dataset["files"][name]["features"]
+        layers.append(_pmtiles_layer(
+            f"corroboration-{name}",
+            f"Insect and disease survey {year}, damage points ({count:,})",
+            f"{site}snapshots/{name}.pmtiles",
+            {"fillColor": "#e65100", "strokeColor": "#7a2f00", "circleRadius": 3, "strokeWidth": 1},
+            source_layer=dataset.get("layer", "damage"),
+            about=_about(attribution, dataset.get("service"), snapshot["date"], count),
+        ))
     return layers
 
 
@@ -423,7 +442,7 @@ def project_layers(fire_snapshot=None, roads_snapshot=None, site="", carbon_snap
     """
     folders = [
         ("corroboration-group-carbon", "Carbon projects", _carbon_projects(carbon_snapshot, site), False),
-        ("corroboration-group-ids", "Insect and disease survey", _insect_and_disease(), False),
+        ("corroboration-group-ids", "Insect and disease survey", _insect_and_disease(fire_snapshot, site), False),
         ("corroboration-group-land", "Land status", _land_status(fire_snapshot, roads_snapshot, site), False),
     ]
     fires = _fire_records(fire_snapshot, site) if fire_snapshot else None
@@ -437,6 +456,7 @@ def project_layers(fire_snapshot=None, roads_snapshot=None, site="", carbon_snap
     ]
     folders = [folder for folder in folders if folder[2]]
     layers, groups = [], []
+
     for group_id, name, members, _ in reversed(folders):
         groups.append({
             "id": group_id,
@@ -447,6 +467,11 @@ def project_layers(fire_snapshot=None, roads_snapshot=None, site="", carbon_snap
         })
         for layer in reversed(members):
             layer["groupId"] = group_id
+            # Only the carbon projects are drawn when the site opens. With every
+            # layer on, each pan sent hundreds of image requests to the federal
+            # services at once, and on 2026-09-15 a session over the Olympic
+            # Peninsula logged 250 failed survey tiles in 26 seconds.
+            layer["visible"] = group_id == "corroboration-group-carbon"
             layers.append(layer)
     return layers, groups
 

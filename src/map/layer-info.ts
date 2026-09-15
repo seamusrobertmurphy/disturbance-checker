@@ -146,8 +146,8 @@ async function mapIdentify(base: string, layers: string, { map, at, signal }: Lo
   return body.results ?? [];
 }
 
-async function surveyQuery(layer: 0 | 1, years: number[], fields: string[], { map, at, signal }: Lookup): Promise<Record<string, unknown>[]> {
-  const px = layer === 0 ? 8 : 3;
+async function surveyQuery(layer: 1, years: number[], fields: string[], { map, at, signal }: Lookup): Promise<Record<string, unknown>[]> {
+  const px = 3;
   const a = map.unproject([at.point.x - px, at.point.y + px]);
   const b = map.unproject([at.point.x + px, at.point.y - px]);
   const body = await getJson<{ features?: Array<{ attributes: Record<string, unknown> }> }>(`${IDS}/${layer}/query`, {
@@ -178,31 +178,29 @@ function serviceLookups(layers: ServiceLayer[], lookup: Lookup): Array<Promise<S
   const tasks: Array<Promise<Section | null>> = [];
   const byKey = (test: RegExp) => layers.filter((layer) => test.test(layer.key));
 
+  // Damage areas are drawn by the service, so the service is asked. Damage
+  // points are copied into PMTiles and read from the map in tileSections.
   const areaYears = byKey(/^ids-\d{4}$/).map((layer) => Number(layer.key.slice(4)));
-  const pointYears = byKey(/^ids-points-\d{4}$/).map((layer) => Number(layer.key.slice(11)));
-  const survey = async (layer: 0 | 1, years: number[]): Promise<Section | null> => {
-    if (years.length === 0) return null;
-    const fields = layer === 1
-      ? ["survey_year", "dca_common_name", "host", "damage_type", "percent_affected", "legacy_severity", "acres", "label", "notes"]
-      : ["survey_year", "dca_common_name", "host", "damage_type", "number_of_trees_count_range", "tree_count", "label", "notes"];
-    const records = await surveyQuery(layer, years, fields, lookup);
-    return {
-      heading: `Insect and disease survey, damage ${layer === 1 ? "areas" : "points"}`,
-      entries: records.map((r) => ({
-        title: `${str(r.dca_common_name) ?? "Unknown damage agent"}, ${r.survey_year}`,
-        rows: [
-          ["Host", str(r.host)],
-          ["Damage", str(r.damage_type)],
-          ...(layer === 1
-            ? [["Affected", str(r.percent_affected) ?? str(r.legacy_severity)], ["Acres", acres(r.acres)]] as Rows
-            : [["Trees", str(r.number_of_trees_count_range) ?? str(r.tree_count)]] as Rows),
-          ["Label", str(r.label)],
-          ["Notes", str(r.notes)],
-        ],
-      })),
-    };
-  };
-  tasks.push(survey(1, areaYears), survey(0, pointYears));
+  if (areaYears.length) {
+    tasks.push((async () => {
+      const fields = ["survey_year", "dca_common_name", "host", "damage_type", "percent_affected", "legacy_severity", "acres", "label", "notes"];
+      const records = await surveyQuery(1, areaYears, fields, lookup);
+      return {
+        heading: "Insect and disease survey, damage areas",
+        entries: records.map((r) => ({
+          title: `${str(r.dca_common_name) ?? "Unknown damage agent"}, ${r.survey_year}`,
+          rows: [
+            ["Host", str(r.host)],
+            ["Damage", str(r.damage_type)],
+            ["Affected", str(r.percent_affected) ?? str(r.legacy_severity)],
+            ["Acres", acres(r.acres)],
+            ["Label", str(r.label)],
+            ["Notes", str(r.notes)],
+          ] as Rows,
+        })),
+      };
+    })());
+  }
 
   const tca = byKey(/^tca-mortality$/)[0];
   if (tca) {
@@ -345,6 +343,19 @@ function tileSections(map: InfoMap, at: MapMouse): Section[] {
           ["Type", str(p.type)], ["Methodology", str(p.methodology)], ["Developer", str(p.developer)],
           ["Crediting", str(p.start) && str(p.end) ? `${p.start} to ${p.end}` : null],
           ["Boundary", str(p.geometry_type) === "Point" ? "Location only" : str(p.boundary_source)],
+        ],
+      };
+    } else if (key.startsWith("ids-points-")) {
+      heading = "Insect and disease survey, damage points";
+      entry = {
+        title: `${str(p.agent) ?? "Unknown damage agent"}, ${str(p.year) ?? ""}`.replace(/, $/, ""),
+        rows: [
+          ["Host", str(p.host)],
+          ["Damage", str(p.damage)],
+          ["Trees", str(p.trees) ?? str(p.tree_count)],
+          ["Recorded", str(p.recorded)],
+          ["Label", str(p.label)],
+          ["Notes", str(p.notes)],
         ],
       };
     } else if (/^(wfigs|nifc)-/.test(key)) {
