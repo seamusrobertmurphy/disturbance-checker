@@ -1186,3 +1186,54 @@ select.dc-input {
   white-space: pre;
   tab-size: 2;
 }
+
+/* Survey record cards on the map. They sit in the map container, outside
+   .dc-root, so they carry their own colours for both themes. */
+.dc-survey-card {
+  position: absolute;
+  z-index: 5;
+  max-width: 300px;
+  max-height: 60%;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1a1d21;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+  line-height: 1.4;
+}
+:root.dark .dc-survey-card,
+:root[data-theme="dark"] .dc-survey-card {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: #161b22;
+  color: #e6edf3;
+}
+.dc-survey-card[hidden] { display: none; }
+.dc-survey-hover { pointer-events: none; }
+.dc-survey-pin { padding-right: 26px; }
+.dc-survey-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.dc-survey-heading {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.7;
+}
+.dc-survey-heading:first-child { margin-top: 0; }
+.dc-survey-record { margin-top: 6px; }
+.dc-survey-title { font-weight: 600; }
+.dc-survey-record table { border-collapse: collapse; }
+.dc-survey-record td { padding: 0 8px 0 0; vertical-align: top; }
+.dc-survey-record td:first-child { opacity: 0.7; white-space: nowrap; }
+.dc-survey-muted { margin-top: 4px; opacity: 0.7; }

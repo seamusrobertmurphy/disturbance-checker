@@ -3,6 +3,7 @@ import { HelpLibrary } from "./help/panel";
 import { renderOfflinePanel } from "./export/panel";
 import { exposeNotebookLayers } from "./notebook/layers";
 import { renderParcelPanel } from "./parcels/panel";
+import { attachSurveyInfo } from "./map/survey-info";
 import { AUDIENCE_LABELS, AUDIENCE_ORDER, guidesFor } from "./help/registry";
 import { DisturbancePanel } from "./panel/panel";
 import { State, createState, fromPersisted, toPersisted } from "./state";
@@ -194,6 +195,10 @@ const plugin: GeoLibrePlugin = {
         }),
       );
     }
+
+    // Survey records under the cursor for the insect and disease survey layers,
+    // which the Forest Service draws as pictures with nothing to read on the map.
+    teardown.push(attachSurveyInfo(app));
 
     // Earth Engine layers sent from GeoLibre's notebook land in the Layers
     // panel through the same host call Add Data uses.
