@@ -21,3 +21,4 @@
 - `general.md` also carries the 2026-09-14 parcel lookup and offline export: what each does, how they were tested live, and the GitHub ID token timeout.
 - `general.md` also carries the 2026-09-14 layer info card: the host patch, the ignored folder name, how it was tested, and the rows that overflow the panel.
 - `general.md` also carries the 2026-09-14 carbon projects build: sizes, cache key, the Pages budget, the QGIS and Earth Engine copies, and where ACR boundaries can and cannot come from.
+- `general.md` also carries the 2026-09-15 layer info card: how switched-on layers are found, the MTBS severity timeout, the LANDFIRE code table, and the only test harness that works.
