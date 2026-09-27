@@ -1,5 +1,6 @@
-iteration: 4
+iteration: 5
 Iteration 1, 2026-09-26 17:47 PDT, added: post-fire drone hotspot subcontracting; Advanced RPAS waterfront surveys; urban canopy assessments from LidarBC; data package reproducibility service; NIC sessional teaching
 Iteration 2, 2026-09-26 17:52 PDT, added: freelance scientific editing; premium Upwork spatial contracts; First Nations Guardian program GIS support; RAPR mapping subcontracts for QEPs; sea kayak instruction and natural history guiding
 Iteration 3, 2026-09-26 17:57 PDT, added: Horizon Europe expert evaluator; expert witness in tree and timber disputes; aerial stock footage licensing; online R and spatial statistics tutoring; ISA tree risk assessment
 Iteration 4, 2026-09-26 18:02 PDT, added: AI model training as domain expert; freelance coastal science journalism; FireSmart home ignition zone assessments; online R workshops for training providers; grant writing and monitoring design for stewardship societies
+Iteration 5, 2026-09-26 18:07 PDT, added: forest health aerial overview survey observer; small federal science contracts via CanadaBuys; drone mapping of invasive plants; Comox Valley SEI disturbance update; custom R Shiny dashboards for NGOs and local governments
