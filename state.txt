@@ -1,2 +1,3 @@
-iteration: 1
+iteration: 2
 Iteration 1, 2026-09-26 17:47 PDT, added: post-fire drone hotspot subcontracting; Advanced RPAS waterfront surveys; urban canopy assessments from LidarBC; data package reproducibility service; NIC sessional teaching
+Iteration 2, 2026-09-26 17:52 PDT, added: freelance scientific editing; premium Upwork spatial contracts; First Nations Guardian program GIS support; RAPR mapping subcontracts for QEPs; sea kayak instruction and natural history guiding
