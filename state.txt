@@ -1,4 +1,4 @@
-iteration: 16
+iteration: 17
 Iteration 1, 2026-09-26 17:47 PDT, added: post-fire drone hotspot subcontracting; Advanced RPAS waterfront surveys; urban canopy assessments from LidarBC; data package reproducibility service; NIC sessional teaching
 Iteration 2, 2026-09-26 17:52 PDT, added: freelance scientific editing; premium Upwork spatial contracts; First Nations Guardian program GIS support; RAPR mapping subcontracts for QEPs; sea kayak instruction and natural history guiding
 Iteration 3, 2026-09-26 17:57 PDT, added: Horizon Europe expert evaluator; expert witness in tree and timber disputes; aerial stock footage licensing; online R and spatial statistics tutoring; ISA tree risk assessment
@@ -15,3 +15,4 @@ Iteration 13, 2026-09-26 18:45 PDT, added: manual snow survey contracting; exper
 Iteration 14, 2026-09-26 18:50 PDT, added: EUDR deforestation free verification; science fact checking; kayak sonar lake bathymetry; CMT survey and LiDAR prediction support; paid BC forest science newsletter
 Iteration 15, 2026-09-26 18:54 PDT, added: shellfish aquaculture seafloor surveys in Baynes Sound; salmon restoration effectiveness monitoring; National Geographic Explorer grants; QField and KoboToolbox field data systems; guided forest ecology walks
 Iteration 16, 2026-09-26 18:59 PDT, added: COSEWIC status report writing; covenant baseline and monitoring reports; wildlife danger tree assessment; drone ground school teaching; LiDAR marbled murrelet habitat mapping
+Iteration 17, 2026-09-26 19:04 PDT, added: interpretive sign content writing; LiDAR tree height and view dispute reports; Garry oak and CDF restoration plans for landowners; yacht delivery skipper; CPD webinars for BC forest professionals
