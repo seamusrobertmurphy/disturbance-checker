@@ -1,4 +1,4 @@
-iteration: 8
+iteration: 9
 Iteration 1, 2026-09-26 17:47 PDT, added: post-fire drone hotspot subcontracting; Advanced RPAS waterfront surveys; urban canopy assessments from LidarBC; data package reproducibility service; NIC sessional teaching
 Iteration 2, 2026-09-26 17:52 PDT, added: freelance scientific editing; premium Upwork spatial contracts; First Nations Guardian program GIS support; RAPR mapping subcontracts for QEPs; sea kayak instruction and natural history guiding
 Iteration 3, 2026-09-26 17:57 PDT, added: Horizon Europe expert evaluator; expert witness in tree and timber disputes; aerial stock footage licensing; online R and spatial statistics tutoring; ISA tree risk assessment
@@ -7,3 +7,4 @@ Iteration 5, 2026-09-26 18:07 PDT, added: forest health aerial overview survey o
 Iteration 6, 2026-09-26 18:12 PDT, added: drone eelgrass and kelp habitat mapping; rural land constraint screening reports; LiDAR terrain art prints; drone crop and orchard health mapping; accredited silviculture surveys
 Iteration 7, 2026-09-26 18:16 PDT, added: camera trap image processing and analysis; pre-clearing bird nest surveys; skippered ecology sailing trips; open textbook authoring for BC institutions; QGIS training for local government and NGO staff
 Iteration 8, 2026-09-26 18:21 PDT, added: expedition cruise naturalist; R book for Chapman and Hall CRC; squash coaching; wetland mapping and classification; remote sensing for utility vegetation management
+Iteration 9, 2026-09-26 18:26 PDT, added: R Consortium technical grants; Hakai Institute contract research; fuel type mapping for Community Wildfire Resiliency Plans; Strathcona Park Lodge outdoor education; drone and LiDAR inventory for woodlot owners
