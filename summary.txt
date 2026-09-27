@@ -1,0 +1,129 @@
+SUMMARY: 90 INCOME IDEAS RANKED BY EXPECTED INCOME PER HOUR IN THE FIRST THREE MONTHS
+
+How the ranking works
+
+Each idea is scored by the income it is likely to bring in between October and December 2026, divided by all the hours it would take in that period, including training, marketing, proposals and unpaid setup as well as billable work. A high rate that arrives only after months of unpaid preparation therefore scores low here, even if it is excellent over a year. Season matters: this window is autumn and early winter on the coast, so summer field work, fire season and tourism score near zero now however good they are in July. The figures are judgements built from the verified rates in ideas.txt, not measurements, and are in CAD. Numbers in brackets are the idea numbers in ideas.txt.
+
+Full ranking
+
+1. AI model training and evaluation as a domain expert (16), about 110 an hour
+2. EU Deforestation Regulation verification (66), about 90 an hour
+3. LiDAR tree height and view reports (82), about 75 an hour
+4. QGIS training for local government and NGO staff (35), about 70 an hour
+5. Rural land constraint screening reports (27), about 65 an hour
+6. Science fact checking (67), about 60 an hour
+7. Online R and spatial statistics tutoring (14), about 60 an hour
+8. R Shiny dashboards for NGOs and local governments (25), about 55 an hour
+9. Satellite imagery investigations for newsrooms and NGOs (87), about 55 an hour
+10. Camera trap image processing and analysis (31), about 55 an hour
+11. Bioacoustic data processing and analysis (51), about 50 an hour
+12. Mapping and drone support for riparian QEPs (9), about 50 an hour
+13. QField and KoboToolbox field data systems (74), about 50 an hour
+14. Publication quality scientific figures (60), about 50 an hour
+15. Data package and reproducibility service (4), about 45 an hour
+16. Tutoring forestry trainees toward registration (90), about 45 an hour
+17. Interpretive sign research and writing (81), about 45 an hour
+18. Freelance cartography for publishers (49), about 40 an hour
+19. Wildfire model validation for insurance analytics (53), about 40 an hour
+20. Freelance scientific editing (6), about 35 an hour
+21. Premium Upwork spatial contracts (7), about 35 an hour
+22. Small federal science contracts via CanadaBuys (22), about 35 an hour
+23. Independent environmental assessment review (48), about 35 an hour
+24. Grant writing and monitoring design for stewardship societies (20), about 30 an hour
+25. FAO and UN home based consultancies (56), about 30 an hour
+26. Adviser to adaptation and wildfire startups (62), about 30 an hour
+27. Historical air photo land use analysis (63), about 30 an hour
+28. Freelance coastal science journalism (17), about 30 an hour
+29. Strathcona Park Lodge outdoor education (44), about 25 an hour
+30. Utility vegetation management remote sensing (40), about 25 an hour
+31. Covenant baseline and monitoring reports (77), about 25 an hour
+32. Advanced RPAS waterfront and shoreline surveys (2), about 25 an hour
+33. CPD webinars for BC forest professionals (85), about 25 an hour
+34. Contracted scientific writing workshops (54), about 25 an hour
+35. Shellfish aquaculture seafloor surveys (71), about 25 an hour
+36. Fuel type mapping for wildfire resiliency plans (43), about 20 an hour
+37. Hakai Institute contract research (42), about 20 an hour
+38. Garry oak and coastal Douglas-fir restoration plans (83), about 20 an hour
+39. Drone and LiDAR inventory for woodlot owners (45), about 20 an hour
+40. Trail and recreation use monitoring (50), about 15 an hour
+41. Drone ground school teaching (79), about 15 an hour
+42. Dendrochronology services (65), about 15 an hour
+43. Culturally modified tree survey support (69), about 15 an hour
+44. Squash coaching (38), about 15 an hour
+45. LiDAR terrain art prints (28), about 15 an hour
+46. Kayak sonar lake bathymetry (68), about 15 an hour
+47. Yacht delivery skipper (84), about 10 an hour
+48. Drone crop and orchard mapping (29), about 10 an hour
+49. Invasive plant drone mapping (23), about 10 an hour
+50. Eelgrass, salt marsh and kelp mapping (26), about 10 an hour
+51. FireSmart home ignition zone assessments (18), about 10 an hour
+52. ISA tree risk assessment (15), about 10 an hour
+53. Guided forest ecology walks (75), about 10 an hour
+54. Paid BC forest science newsletter (70), about 5 an hour
+55. Aerial stock footage licensing (13), about 5 an hour
+56. Expert witness in tree and timber disputes (12), about 5 an hour
+57. Wildlife danger tree assessment (78), about 5 an hour
+58. Manual snow survey contracting (61), about 5 an hour
+
+The remaining ideas are expected to pay close to nothing before the end of December, because of season, grant cycles, hiring calendars or required credentials. They are listed in order of how soon they could start paying after that.
+
+59. Pre-clearing bird nest surveys (32)
+60. Post-fire drone hotspot subcontracting (1)
+61. Seasonal invasive forest pest surveys (55)
+62. Horizon Europe expert evaluator (11)
+63. COSEWIC status report writing (76)
+64. Salmon restoration effectiveness monitoring (72)
+65. Forest Practices Board specialist contractor (47)
+66. External academic program reviewer (58)
+67. Natural asset inventories for local governments (86)
+68. Drinking water watershed risk analysis (52)
+69. Urban canopy assessments from LidarBC (3)
+70. Wetland mapping and classification (39)
+71. Comox Valley SEI disturbance update (24)
+72. Marbled murrelet habitat mapping (80)
+73. First Nations Guardian program support (8)
+74. Mount Washington forest and snow mapping (89)
+75. Marine debris shoreline surveys (57)
+76. Royal Roads associate faculty (46)
+77. North Island College sessional teaching (5)
+78. Online R workshops for training providers (19)
+79. Open textbook authoring (34)
+80. Film and documentary science advisor (59)
+81. Forest health aerial overview survey observer (21)
+82. Accredited silviculture surveys (30)
+83. Expedition cruise naturalist (36)
+84. Sea kayak instruction and guiding (10)
+85. Skippered ecology sailing trips (33)
+86. Professional Agrologist registration for farm plans (64)
+87. R Consortium technical grants (41)
+88. National Geographic Explorer grants (73)
+89. Oxford Bibliographies and encyclopedia articles (88)
+90. Book on forest remote sensing in R (37)
+
+The top ten explained
+
+1. AI model training and evaluation (16). Expert annotation platforms pay credentialed PhDs 50 to 150 USD an hour, onboard in one or two weeks, pay weekly and need no marketing, so nearly every hour spent is paid. The risks are irregular project flow and confidentiality terms, which must be checked against his employment contract. It is the fastest route to meaningful income this autumn.
+
+2. EU Deforestation Regulation verification (66). Large operators must comply from 30 December 2026, so demand for remote sensing scientists who can check plot geolocation and post-2020 forest loss peaks exactly in this three month window. Rates of 100 to 160 CAD an hour are realistic, and it is supply chain due diligence rather than carbon work, though firms that also sell credits must be screened out. The time pressure makes buyers decide quickly.
+
+3. LiDAR tree height and view reports (82). Free LidarBC data, drone imagery and a repeatable R workflow let him produce a precise report in a day or two and sell it for 600 to 2,000 CAD, paid on delivery. Waterfront strata disputes in Comox, Courtenay and Qualicum supply steady demand, and few people offer objective measurement. Winter storms also prompt tree questions.
+
+4. QGIS training for local government and NGO staff (35). A single booked group day at 1,500 to 3,000 CAD pays for the preparation, and the same materials resell to every later client. Autumn and winter are when municipal staff have time for training, and budgets for the fiscal year ending in March are often still available.
+
+5. Rural land constraint screening reports (27). Fixed price reports of 350 to 900 CAD, paid upfront, built from public layers with a reusable template, reach a good hourly rate after the first few. Realtors are the channel, and a handful of referrals is enough to test demand within weeks.
+
+6. Science fact checking (67). Rates of about 46 to 50 USD an hour, magazine payment within 30 to 60 days and almost no setup make this a steady earner. It also builds relationships with the same editors who buy journalism and satellite analyses.
+
+7. Online R and spatial statistics tutoring (14). At 80 to 100 USD an hour, Wyzant's 25 percent fee still leaves 60 to 75 USD, and autumn term brings graduate students facing thesis analysis. Direct referrals through graduate associations avoid the fee entirely once a reputation exists.
+
+8. R Shiny dashboards (25). One direct NGO or local government client at 3,000 to 8,000 CAD per dashboard, with a deposit upfront, gives a strong rate. Fiscal year end in March pushes organisations to spend remaining budgets in winter.
+
+9. Satellite imagery investigations for newsrooms and NGOs (87). Analyses priced at 1,000 to 5,000 CAD can be commissioned within weeks of a pitch, and his change detection skills are uncommon among journalists. Output must be rigorous and fully documented, which suits a scientist.
+
+10. Camera trap image processing and analysis (31). Free tools like MegaDetector do the heavy sorting, so paid hours go into quality control and occupancy analysis at 80 to 110 CAD an hour. Many researchers retrieve cameras in autumn and want results over winter, which fits the timing.
+
+A practical reading of the ranking: combine two or three of the top ten for immediate income, for example AI evaluation, EUDR verification and view reports, while starting the paperwork for a few slow ideas with high long run value, such as FAO rosters, the Forest Practices Board supplier list, COSEWIC calls and the R Consortium spring grant cycle.
+
+Canadian tax on self-employment income
+
+Income from all of these ideas, except the few that are employment, is business income reported on form T2125 with his personal return and taxed at his combined federal and BC marginal rate on top of any salary, after deducting legitimate expenses such as equipment, software, insurance, a share of home office and vehicle costs, and training. He must also pay both the employee and employer shares of Canada Pension Plan contributions on net self-employment earnings: in 2026 that is 11.9 percent up to the maximum pensionable earnings of 74,600 CAD and 8 percent between 74,600 and 85,000 CAD, for a combined maximum of 9,292.90 CAD, reduced by any CPP already paid through employment, so a salary above 85,000 CAD means no further CPP is owed. A prudent rule is to set aside 30 to 40 percent of every payment in a separate account, and to expect CRA to require quarterly instalments once net tax owing exceeds 3,000 CAD in the current year and in either of the two previous years. For GST, he is a small supplier and need not register until worldwide taxable revenue, including zero rated exports such as work for foreign clients, exceeds 30,000 CAD in a single calendar quarter or over four consecutive quarters; if one quarter crosses the line he must register within 29 days, and otherwise by the first day of the second month after the quarter in which he crossed it. Registering voluntarily earlier lets him recover GST paid on drones, computers and software, which can be worthwhile given the equipment in several ideas. Selling physical goods such as prints can also bring BC PST obligations, which are separate from GST. Sources: https://www.canada.ca/en/revenue-agency/services/tax/businesses/topics/gst-hst-businesses/when-register-charge.html and https://canadianmoneyhelp.ca/articles/how-much-cpp-do-i-pay-2026/
