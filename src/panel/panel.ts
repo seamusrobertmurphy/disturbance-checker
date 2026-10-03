@@ -129,6 +129,28 @@ const OPEN_SECTIONS_KEY = "tuvsud.disturbance.openSections";
  * that by a wide margin. Without one a hung request left the section on
  * "searching" with nothing to retry.
  */
+/**
+ * The true-colour layers load at half, the classified layers solid.
+ *
+ * The SOP's own stretch renders conifer country dark. Measured over the
+ * Vanderhoof view on 2026-09-06, its 0.02 floor drove 26.7 per cent of red and
+ * 16.5 per cent of blue to pure black while the 0.25 ceiling was never
+ * approached, the 99th percentiles being 0.159 red, 0.139 green and 0.112
+ * blue. Operators were reaching for the opacity slider on every run to get the
+ * basemap to lift it, so the layer now arrives where they were putting it.
+ *
+ * Opacity rather than a wider stretch, deliberately. The before-and-after
+ * layers are the SOP's own visualisation and a reviewer comparing this tool
+ * against the QGIS script has to see the same pixel values. Opacity is a
+ * property of the layer on the map and changes nothing that was rendered, so
+ * the fidelity claim survives and the slider still moves.
+ *
+ * The classified layers stay at 1. They are the evidence, they already render
+ * transparent below the Low break, and fading them would mean quoting an area
+ * from something half dissolved into the basemap.
+ */
+const RGB_LAYER_OPACITY = 0.5;
+
 const CORROBORATION_TIMEOUT = 90_000;
 
 /** How long to wait before asking a registry a second time. */
@@ -3059,6 +3081,7 @@ export class DisturbancePanel {
             dataUrl: layer.dataUrl,
             coordinates: layer.coordinates,
             visible: layer.visible,
+            opacity: layer.role === "rgb" ? RGB_LAYER_OPACITY : 1,
           });
           created.push(`tuvsud-dc-r-${suffix}`);
         }
