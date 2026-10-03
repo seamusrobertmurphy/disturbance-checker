@@ -457,6 +457,24 @@ export class DisturbancePanel {
       ),
     );
 
+    // The switch sits here rather than under imagery because what it moves is
+    // the threshold, not the pixel.
+    const normalise = input("checkbox", String(this.state.normalise), () => {});
+    normalise.checked = this.state.normalise;
+    normalise.addEventListener("change", () => {
+      this.patch({
+        normalise: normalise.checked,
+        status: this.state.status === "complete" ? "stale" : this.state.status,
+      });
+    });
+    body.appendChild(
+      field(
+        "Remove the scene-wide shift",
+        normalise,
+        "Two windows a few years apart differ by more than the disturbance, because a dry summer, a different sun angle and a different atmosphere move the index over the whole property at once. The run measures that shift from the ground that did not change, which is the tall peak in the histogram below, and moves the three thresholds by it before classifying. On the dNDVI scale, where Low is 0.10, a shift of 0.04 has already spent forty per cent of the distance to a finding before a tree has been touched. It is measured and reported on every run whether or not this is ticked, and it is refused rather than guessed where under half the area sits in the unchanged peak, because on ground that mostly did change the peak is the disturbance and removing it would remove the finding. Untick it to classify on the SOP thresholds exactly as written, which is what reproducing an older run needs.",
+      ),
+    );
+
     const legend = el("div", "dc-legend");
     const swatch = (colour: string, label: string) => {
       const item = el("div", "dc-legend-item");
@@ -2734,7 +2752,7 @@ export class DisturbancePanel {
    */
   private renderSharpen(): HTMLElement {
     const wrap = el("div", "dc-stack");
-    wrap.appendChild(el("div", "dc-subhead", `Sharpened backdrop, ${SHARP_SCALE} m`));
+    wrap.appendChild(el("div", "dc-subhead", `Super-resolved backdrop, ${SHARP_SCALE} m`));
 
     const result = this.state.results[0];
     if (!result) return wrap;
@@ -2774,7 +2792,7 @@ export class DisturbancePanel {
       el(
         "p",
         "dc-hint",
-        `Reads the four 10 m bands over this view only and redraws them at ${SHARP_SCALE} m, ${check.tiles} model tiles. The detail is a trained guess, not a measurement, so use it to tell a cutblock from a road from a shadow and never as evidence of an area. Zooming or panning does not update it: sharpen again for the new view.`,
+        `Reconstructs the four 10 m bands over this view at ${SHARP_SCALE} m in ${check.tiles} model tiles, using SEN2SRLite from the OpenSR project at the Image Processing Laboratory, University of Valencia, funded by the European Space Agency Φ-lab. Donike, Portalés-Juliá, Aybar and Gómez-Chova assessed this family of models in Geomatics in September 2026 and found that visual sharpness on its own does not establish that the added detail is real, so what you see is a reconstruction and never a measurement. Read it to tell a cutblock from a road from a windthrow gap from a shadow, and cite an area from the classified layers instead. Zooming or panning does not update it, so sharpen again for the new view.`,
       ),
     );
 
@@ -2939,6 +2957,7 @@ export class DisturbancePanel {
           aoi: this.state.aoi,
           periods: this.state.periods,
           maxCloud: this.state.maxCloud,
+          normalise: this.state.normalise,
           maskId: this.state.maskId,
           maskOptions: this.state.maskOptions,
           breaks: this.state.breaks,

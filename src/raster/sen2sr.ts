@@ -16,6 +16,28 @@ import {
 // gap or a shadow. Nothing it produces reaches an index, a class area or a
 // histogram, and nothing it produces is cited in a finding.
 //
+// The model and who made it.
+//
+// SEN2SRLite is one variant of SEN2SR, the framework Donike, Portales-Julia,
+// Aybar and Gomez-Chova describe as "the common framework that extends each
+// four-band RGB-NIR refinement to ten Sentinel-2 bands at a uniform spatial
+// resolution of 2.5 m" (Geomatics, 2026, 6(5), 97, doi 10.3390/geomatics6050097).
+// It comes out of the OpenSR project at the Image Processing Laboratory,
+// University of Valencia, funded by the European Space Agency Phi-lab under
+// "Explainable AI: Application to Trustworthy Super-Resolution".
+//
+// Only the first of the framework's three stages is run here, the four native
+// 10 m bands to 2.5 m. The red-edge and SWIR reconstruction is not, so this is
+// not the ten-band product the paper evaluates, and B11 and B12 reach the
+// indices at their native 20 m exactly as before.
+//
+// That same assessment is the reason the layer is display only. Its authors
+// found that "visual sharpness or generated high-frequency content cannot be
+// used alone to select a model for index-based hazard mapping", and closed
+// that "these cases demonstrate feasibility rather than generalization". A
+// tool whose output is quoted in a verification statement has no business
+// treating a reconstruction as a measurement.
+//
 // Code MIT from ESAOpenSR/SEN2SR, weights from the Hugging Face repo
 // tacofoundation/sen2sr, variant SEN2SRLite/NonReference_RGBN_x4, converted to
 // ONNX by scripts/export-sen2sr-model.py. That script checks the conversion

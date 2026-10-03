@@ -114,6 +114,23 @@ export function buildManifest(state: State, runAt: Date): string {
       lines.push(
         `    Breaks      Low ${breaks.low}, Moderate ${breaks.moderate}, High ${breaks.high}`,
       );
+
+      // The scene-wide shift, always recorded. A verifier reading this has to
+      // be able to see both what the ground showed and which thresholds the
+      // areas below were actually counted on.
+      const shift = result.normalisation?.[id];
+      if (shift) {
+        const applied = result.breaksUsed?.[id];
+        const used =
+          applied && applied.low !== breaks.low
+            ? `applied, classified on Low ${applied.low.toFixed(3)}, Moderate ${applied.moderate.toFixed(3)}, High ${applied.high.toFixed(3)}`
+            : shift.applicable
+              ? "measured but not applied, the switch was off"
+              : `not applied, ${shift.refusal}`;
+        lines.push(
+          `    Scene shift ${shift.offset >= 0 ? "+" : ""}${shift.offset.toFixed(3)} on unchanged ground (${Math.round(shift.stableShare * 100)}% of the area), ${used}`,
+        );
+      }
       if (deviated) {
         lines.push(
           `    DEVIATION   defaults were Low ${defaults.low}, Moderate ${defaults.moderate}, High ${defaults.high}`,

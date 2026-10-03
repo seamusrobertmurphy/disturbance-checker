@@ -192,3 +192,134 @@ export function classAreasHa(
 
 /** Delta ids in the order the panel presents them. */
 export const DELTA_IDS = Object.keys(DELTAS) as DeltaId[];
+
+// ---------------------------------------------------------------------------
+// Relative radiometric normalisation
+
+/**
+ * How far the unchanged ground moved between the two windows.
+ *
+ * A reporting period differs by more than the disturbance. A dry summer, a
+ * different sun angle and a different atmosphere all shift the index over the
+ * whole property at once, so a delta computed across two years carries a
+ * scene-wide offset that has nothing to do with canopy. On the dNDVI scale,
+ * where the SOP's Low break is 0.10, an offset of 0.04 has already spent forty
+ * per cent of the distance to a finding before a single tree has been touched.
+ *
+ * The offset is measured from the ground that did not change, which is the
+ * ordinary relative radiometric normalisation of the remote sensing
+ * literature, done here without asking the operator to draw a reference area.
+ * In a normal reporting period most of a property is unchanged, so the delta
+ * histogram carries one tall peak and unchanged forest is what builds it. That
+ * peak sits on zero when the two windows are comparable and away from zero
+ * when they are not, and where it sits is the correction.
+ *
+ * Nothing is estimated from imagery the run did not already read. The
+ * histogram is the SOP's own fixedHistogram(-0.5, 0.8, 130), accumulated block
+ * by block a few lines above, so this costs one pass over 130 numbers.
+ */
+export interface Normalisation {
+  /** The shift the unchanged ground shows, in index units. */
+  offset: number;
+  /** Share of valid pixels inside the peak, 0 to 1. */
+  stableShare: number;
+  /** Whether the guards allow the offset to be applied. */
+  applicable: boolean;
+  /** Why not, when it is not. Null when applicable. */
+  refusal: string | null;
+}
+
+/**
+ * Pixels within this distance of the peak count as unchanged for the guard.
+ * Half the SOP's smallest Low break, so the window cannot swallow a class.
+ */
+const STABLE_WINDOW = 0.05;
+
+/**
+ * The unchanged population must dominate, or the assumption behind the whole
+ * correction is false. A property where most of the ground really did change
+ * has its peak built by disturbance, and subtracting that would erase the
+ * finding.
+ */
+const MIN_STABLE_SHARE = 0.5;
+
+export function normalisationOffset(bins: HistogramBin[]): Normalisation {
+  const width = (HISTOGRAM_MAX - HISTOGRAM_MIN) / HISTOGRAM_STEPS;
+  const total = bins.reduce((sum, bin) => sum + bin.count, 0);
+  if (total === 0) {
+    return {
+      offset: 0,
+      stableShare: 0,
+      applicable: false,
+      refusal:
+        "No pixel carried a valid delta, so there was no unchanged ground to measure a shift against.",
+    };
+  }
+
+  let peak = 0;
+  for (let i = 1; i < bins.length; i += 1) {
+    if (bins[i].count > bins[peak].count) peak = i;
+  }
+
+  // Parabolic interpolation through the peak and its two neighbours, so the
+  // answer is not quantised to the 0.01 bin. A shift of half a bin is half the
+  // width of the smallest severity class and is worth resolving.
+  const centre = bins[peak].start + width / 2;
+  let offset = centre;
+  if (peak > 0 && peak < bins.length - 1) {
+    const left = bins[peak - 1].count;
+    const mid = bins[peak].count;
+    const right = bins[peak + 1].count;
+    const denominator = left - 2 * mid + right;
+    if (denominator !== 0) {
+      const shift = (0.5 * (left - right)) / denominator;
+      // A parabola through three counts can only place the vertex inside the
+      // peak bin. Anything further out means the shape is not a peak.
+      if (Math.abs(shift) <= 0.5) offset = centre + shift * width;
+    }
+  }
+
+  let stable = 0;
+  for (const bin of bins) {
+    const binCentre = bin.start + width / 2;
+    if (Math.abs(binCentre - offset) <= STABLE_WINDOW) stable += bin.count;
+  }
+  const stableShare = stable / total;
+
+  if (stableShare < MIN_STABLE_SHARE) {
+    return {
+      offset,
+      stableShare,
+      applicable: false,
+      refusal: `Only ${Math.round(stableShare * 100)} per cent of the area sits in the unchanged peak, below the ${Math.round(MIN_STABLE_SHARE * 100)} per cent this correction needs. On ground where most of the area changed, the peak is built by the disturbance itself and removing it would remove the finding.`,
+    };
+  }
+
+  if (Math.abs(offset) < width) {
+    return {
+      offset,
+      stableShare,
+      applicable: false,
+      refusal: `The unchanged ground moved by ${offset.toFixed(3)}, less than the ${width.toFixed(2)} histogram bin the offset is measured on. That is not a shift worth removing.`,
+    };
+  }
+
+  return { offset, stableShare, applicable: true, refusal: null };
+}
+
+/**
+ * The severity breaks with the scene-wide shift taken out.
+ *
+ * Classifying `delta - offset` against the SOP breaks and classifying `delta`
+ * against the breaks moved by the same offset give identical pixels, so the
+ * correction is applied here rather than to several million delta values. It
+ * also leaves an audit trail a verifier can read, because the run manifest
+ * already records the breaks a run used.
+ */
+export function shiftBreaks(breaks: Breaks, offset: number): Breaks {
+  return {
+    low: breaks.low + offset,
+    moderate: breaks.moderate + offset,
+    high: breaks.high + offset,
+  };
+}

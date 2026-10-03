@@ -100,6 +100,14 @@ export interface State {
    * out of the result object makes that structural rather than a convention.
    */
   corroboration: Corroboration | null;
+  /**
+   * Remove the scene-wide index shift before classifying. On by default.
+   *
+   * Persisted with the project, because it changes which pixels cross a
+   * severity break and a colleague reopening the project must get the same
+   * areas the person who saved it got.
+   */
+  normalise: boolean;
   corroborationStatus: "idle" | "loading" | "ready" | "error";
   corroborationError: string | null;
 
@@ -193,6 +201,7 @@ export function createState(): State {
     rgbBlendActive: false,
 
     corroboration: null,
+    normalise: true,
     corroborationStatus: "idle",
     corroborationError: null,
     referenceError: null,
@@ -251,6 +260,7 @@ export interface PersistedState {
   breaks: Record<DeltaId, Breaks>;
   justifications: Record<DeltaId, string>;
   context: Record<ContextRole, ContextLayer | null>;
+  normalise?: boolean;
 }
 
 /**
@@ -283,6 +293,7 @@ export function toPersisted(state: State): PersistedState {
     aoiLabel: state.aoiLabel,
     periods: state.periods,
     maxCloud: state.maxCloud,
+    normalise: state.normalise,
     maskId: state.maskId,
     maskOptions: state.maskOptions,
     breaks: state.breaks,
@@ -311,6 +322,10 @@ export function fromPersisted(state: State, raw: unknown): State {
         : state.periods,
     maxCloud:
       typeof persisted.maxCloud === "number" ? persisted.maxCloud : state.maxCloud,
+    normalise:
+      typeof persisted.normalise === "boolean"
+        ? persisted.normalise
+        : state.normalise,
     maskId: persisted.maskId ?? state.maskId,
     maskOptions: { ...state.maskOptions, ...(persisted.maskOptions ?? {}) },
     breaks: persisted.breaks ?? state.breaks,

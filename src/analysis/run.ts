@@ -47,6 +47,9 @@ import {
   HistogramBin,
   accumulateClassCounts,
   accumulateHistogram,
+  normalisationOffset,
+  shiftBreaks,
+  type Normalisation,
   classAreasHa,
   classifyDelta,
   computeDeltas,
@@ -110,6 +113,15 @@ export interface Period {
 export interface RunParams {
   aoi: Aoi;
   periods: Period[];
+  /**
+   * Remove the scene-wide shift before classifying.
+   *
+   * On by default. A pre and a post window differ by more than the
+   * disturbance, and the offset the unchanged ground shows is weather and sun
+   * angle rather than canopy. Off leaves the SOP breaks exactly where the SOP
+   * put them, which is what an operator reproducing an older run wants.
+   */
+  normalise: boolean;
   maxCloud: number;
   maskId: string;
   maskOptions: MaskOptions;
@@ -157,6 +169,10 @@ export interface PeriodResult {
   deltas: Record<DeltaId, DeltaResult>;
   layers: PaintedLayer[];
   grid: TargetGrid;
+  /** The shift the unchanged ground showed, per index, and whether it was used. */
+  normalisation: Record<DeltaId, Normalisation>;
+  /** The breaks the classification actually ran on, shifted or not. */
+  breaksUsed: Record<DeltaId, Breaks>;
   aoiAreaHa: number;
   /** Pixels with at least one clear look in both windows. */
   observedPixels: number;
@@ -395,6 +411,16 @@ export async function runPeriod(
     dNDMI: new Uint8Array(total).fill(CLASS_NODATA),
     dNBR: new Uint8Array(total).fill(CLASS_NODATA),
   };
+  // The delta is held at full extent so classification can wait for the
+  // histogram. The scene-wide shift cannot be known until every block has been
+  // counted, and re-reading the imagery to apply it would double the network
+  // cost of a run. Three more Float32 arrays beside the six the RGB layers
+  // already hold.
+  const deltaGrid: Record<DeltaId, Float32Array> = {
+    dNDVI: new Float32Array(total).fill(Number.NaN),
+    dNDMI: new Float32Array(total).fill(Number.NaN),
+    dNBR: new Float32Array(total).fill(Number.NaN),
+  };
   const preRgb = allocateBands(total);
   const postRgb = allocateBands(total);
 
@@ -456,9 +482,7 @@ export async function runPeriod(
 
     for (const id of DELTA_IDS) {
       accumulateHistogram(histograms[id], deltas[id]);
-      const blockClasses = classifyDelta(deltas[id], params.breaks[id]);
-      accumulateClassCounts(counts[id], blockClasses);
-      scatter(classified[id], blockClasses, block, grid);
+      scatter(deltaGrid[id], deltas[id], block, grid);
     }
 
     for (let i = 0; i < preComposite.length; i += 1) {
@@ -473,6 +497,27 @@ export async function runPeriod(
     scatter(postRgb.red, postComposite.rgb.red, block, grid);
     scatter(postRgb.green, postComposite.rgb.green, block, grid);
     scatter(postRgb.blue, postComposite.rgb.blue, block, grid);
+  }
+
+  // Relative radiometric normalisation, measured from the ground that did not
+  // change. Always computed and always reported; applied only when the
+  // operator has left it on and both guards pass. Applied by moving the SOP
+  // breaks rather than the pixels, which classifies identically and leaves the
+  // shift visible in the run manifest.
+  const normalisation: Record<DeltaId, Normalisation> = {
+    dNDVI: normalisationOffset(histograms.dNDVI),
+    dNDMI: normalisationOffset(histograms.dNDMI),
+    dNBR: normalisationOffset(histograms.dNBR),
+  };
+  const breaksUsed: Record<DeltaId, Breaks> = { ...params.breaks };
+  for (const id of DELTA_IDS) {
+    const found = normalisation[id];
+    if (params.normalise && found.applicable) {
+      breaksUsed[id] = shiftBreaks(params.breaks[id], found.offset);
+    }
+    const classes = classifyDelta(deltaGrid[id], breaksUsed[id]);
+    accumulateClassCounts(counts[id], classes);
+    classified[id] = classes;
   }
 
   report(`${period.id}: drawing layers`, 0.95);
@@ -547,6 +592,8 @@ export async function runPeriod(
     deltas: deltaResults,
     layers,
     grid,
+    normalisation,
+    breaksUsed,
     aoiAreaHa: observedPixels * pixelHa,
     observedPixels,
     thinPixels,
