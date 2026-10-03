@@ -20,7 +20,7 @@ const FACTS_SERVICE =
   "https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_ActivityFactsCommonAttributes_01/MapServer/0";
 
 export const FACTS_ATTRIBUTION =
-  "USDA Forest Service Activity Tracking System (FACTS), common attributes";
+  "Activity FACTS Common Attribute, Forest Service Activity Tracking System (FACTS), Natural Resource Manager, USDA Forest Service Enterprise Data Warehouse, service EDW_ActivityFactsCommonAttributes_01, published by the US Forest Service Enterprise Map Services Program";
 
 /**
  * Activity classes that remove or reduce canopy.

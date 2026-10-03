@@ -2169,7 +2169,7 @@ export class DisturbancePanel {
           el(
             "p",
             "dc-hint",
-            "No canopy-affecting activity is recorded over this area in these years. The activity tracking system covers National Forest System land only, so on private or state ownership this is an absence of jurisdiction rather than an absence of harvest.",
+            "No canopy-affecting silvicultural or fuels activity is recorded over this polygon for these years in FACTS, the Forest Service Activity Tracking System held in Natural Resource Manager, read here from layer 0, Activity FACTS Common Attribute, of the Enterprise Data Warehouse map service EDW_ActivityFactsCommonAttributes_01, published by the US Forest Service Enterprise Map Services Program. The query filters on completed activity by name to the regeneration, intermediate, salvage and fuels classes that open canopy, so stand examinations, prescriptions and certifications are deliberately excluded and their absence here says nothing. FACTS is an administrative record of what a unit reported doing on National Forest System land, not a measurement of canopy and not a cadastre. Fee and state ownership, which carries most of the IFM estate, is outside its scope entirely, so on those parcels this line is an absence of jurisdiction and cannot be cited as evidence that no harvest occurred.",
           ),
         );
       } else {
@@ -2195,7 +2195,7 @@ export class DisturbancePanel {
           el(
             "p",
             "dc-hint",
-            `${Math.round(management.totalAcres).toLocaleString()} acres of recorded canopy-affecting activity. This is the record of what was done, entered by whoever did it, not a measurement of the canopy. A delta over a stand recorded as harvested is a reported treatment behaving as it should; the same delta with no record here is the finding.`,
+            `${Math.round(management.totalAcres).toLocaleString()} acres of completed canopy-affecting activity, from FACTS layer 0, Activity FACTS Common Attribute, of EDW_ActivityFactsCommonAttributes_01, acreage and completion date as the reporting unit entered them. This is an administrative record of what was done rather than a measurement of what the canopy did, so the acreage is the treated area on the accomplishment report and is not reconciled against the polygon. A delta over a stand FACTS records as treated inside the window is a reported treatment behaving as it should. The same delta with no record here, on National Forest System land where the record would exist, is the finding.`,
           ),
         );
       }
