@@ -82,6 +82,11 @@ const plugin: GeoLibrePlugin = {
   activate(app) {
     help = new HelpLibrary();
     panel = createPanel(app);
+    // A project opened with this plugin listed carries the rows of its last
+    // run but not the images, so the Layers panel would open with empty
+    // dNDVI, dNDMI and dNBR entries. They come back only when a run builds
+    // them.
+    panel.dropStaleRunLayers();
 
     const registration = {
       id: PANEL_ID,
@@ -208,6 +213,9 @@ const plugin: GeoLibrePlugin = {
   },
 
   deactivate(app) {
+    // Opening a project saved under the plugin's old id deactivates this one
+    // instead of handing it the project, so the sweep runs here as well.
+    panel?.dropStaleRunLayers();
     panel?.destroy();
     help?.destroy();
     panel = null;
@@ -245,6 +253,7 @@ const plugin: GeoLibrePlugin = {
     // Uploaded site data is embedded in the project, so redraw it rather than
     // making the operator load the same files again.
     panel?.restoreContext();
+    panel?.dropStaleRunLayers();
     return true;
   },
 };

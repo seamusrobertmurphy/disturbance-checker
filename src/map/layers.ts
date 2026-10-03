@@ -92,6 +92,23 @@ export class MapLayerManager {
     for (const id of [...this.managed.keys()]) this.remove(id);
   }
 
+  /**
+   * Drop rows a saved project carried for rasters this session never drew.
+   *
+   * A run's rasters are registered with the host so they list in the Layers
+   * panel, and the host writes every listed layer into a saved project. The
+   * image behind each one is not written, because results are never
+   * persisted, so a reopened project lists the dNDVI, dNDMI and dNBR classes
+   * and the two RGB layers as rows with nothing on the map behind them. Only
+   * ids this manager is not holding are touched, so a live run is left alone.
+   */
+  dropUnmanaged(ids: string[]): void {
+    for (const id of ids) {
+      if (this.managed.has(id)) continue;
+      this.app.unregisterExternalNativeLayer?.(id);
+    }
+  }
+
   remove(id: string): void {
     const entry = this.managed.get(id);
     if (!entry) return;

@@ -773,6 +773,29 @@ export class DisturbancePanel {
     }
   }
 
+  /**
+   * Remove run layers a saved project brought back without their images.
+   *
+   * The ids are the ones syncLayers builds, for every reporting period the
+   * state knows and the first nine by name, under this plugin's prefix and
+   * the one it carried before the rename. Asking the host to drop an id it
+   * does not hold is a no-op, so the list can be generous.
+   */
+  dropStaleRunLayers(): void {
+    const periods = new Set(this.state.periods.map((period) => period.id));
+    for (let n = 1; n <= 9; n += 1) periods.add(`RP${n}`);
+    const keys = [...periods].flatMap((id) => [
+      `${id}-pre-rgb`,
+      `${id}-post-rgb`,
+      ...(Object.keys(DELTAS) as DeltaId[]).map((delta) => `${id}-${delta}-class`),
+    ]);
+    const ids = keys.flatMap((key) => {
+      const suffix = key.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+      return [`dcheck-r-${suffix}`, `tuvsud-dc-r-${suffix}`];
+    });
+    this.layers.dropUnmanaged(ids);
+  }
+
   // Section 1 ---------------------------------------------------------------
 
 
