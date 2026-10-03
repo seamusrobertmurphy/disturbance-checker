@@ -1,4 +1,4 @@
-// Every constant here traces to a section of the TUV SUD SOP "Canopy Disturbance
+// Every constant here traces to a section of the SOP "Canopy Disturbance
 // Checks for ACR IFM Verification". Changing a value changes what the tool will
 // certify, so each carries its provenance.
 

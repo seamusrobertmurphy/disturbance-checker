@@ -13,11 +13,11 @@ import {
   GeoLibreToolbarMenuItem,
 } from "./types/geolibre";
 
-const PANEL_ID = "tuvsud-disturbance-check";
-const HELP_PANEL_ID = "tuvsud-disturbance-check-help";
+const PANEL_ID = "disturbance-check";
+const HELP_PANEL_ID = "disturbance-check-help";
 const OFFLINE_PANEL_ID = `${PANEL_ID}-offline`;
 const PARCEL_PANEL_ID = `${PANEL_ID}-parcels`;
-const TOOLBAR_MENU_ID = "tuvsud-disturbance-check-menu";
+const TOOLBAR_MENU_ID = "disturbance-check-menu";
 
 let state: State = createState();
 let panel: DisturbancePanel | null = null;

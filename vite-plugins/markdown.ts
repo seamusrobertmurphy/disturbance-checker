@@ -67,7 +67,7 @@ function inlineImages(html: string, mdPath: string): string {
 
 export function markdownPlugin(): Plugin {
   return {
-    name: "tuvsud-markdown-to-html",
+    name: "markdown-to-html",
     enforce: "pre",
     transform(code, id) {
       if (!id.endsWith(".md")) return null;

@@ -37,7 +37,7 @@ let assetBase = "";
 export function modelBase(): string {
   if (assetBase) return assetBase;
   const page = new URL("./", window.location.href);
-  return new URL("plugins/tuvsud-disturbance-check/vendor/", page).href;
+  return new URL("plugins/disturbance-check/vendor/", page).href;
 }
 
 /** For the smoke test and for a dev server that serves these from elsewhere. */

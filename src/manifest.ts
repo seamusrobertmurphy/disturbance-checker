@@ -34,7 +34,7 @@ function describeAoi(state: State): string {
 export function buildManifest(state: State, runAt: Date): string {
   const lines: string[] = [];
 
-  lines.push("TUV SUD Canopy Disturbance Check");
+  lines.push("Canopy Disturbance Check");
   lines.push("Sentinel-2 NDVI / NDMI / NBR pre-post delta screening");
   lines.push("");
 

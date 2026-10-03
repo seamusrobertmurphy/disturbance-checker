@@ -1,5 +1,5 @@
 {
-  "id": "tuvsud-disturbance-check",
+  "id": "disturbance-check",
   "name": "Disturbance Check",
   "version": "0.13.1",
   "description": "Sentinel-2 NDVI/NDMI/NBR pre-post delta screening for ACR IFM verification.",

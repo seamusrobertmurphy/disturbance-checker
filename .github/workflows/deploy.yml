@@ -28,7 +28,7 @@ concurrency:
 
 env:
   GEOLIBRE_REF: v1.9.0
-  PLUGIN_ID: tuvsud-disturbance-check
+  PLUGIN_ID: disturbance-check
 
 jobs:
   build:
@@ -385,7 +385,7 @@ jobs:
           from pathlib import Path
 
           dist = Path("geolibre/apps/geolibre-desktop/dist")
-          plugin_id = "tuvsud-disturbance-check"
+          plugin_id = "disturbance-check"
           site = os.environ["PAGES_ORIGIN"].rstrip("/") + os.environ["PAGES_BASE"]
 
           # A satellite basemap, not a road map. Every layer this tool draws is

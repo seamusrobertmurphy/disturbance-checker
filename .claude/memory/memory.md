@@ -22,3 +22,4 @@
 - `general.md` also carries the 2026-09-14 layer info card: the host patch, the ignored folder name, how it was tested, and the rows that overflow the panel.
 - `general.md` also carries the 2026-09-14 carbon projects build: sizes, cache key, the Pages budget, the QGIS and Earth Engine copies, and where ACR boundaries can and cannot come from.
 - `general.md` also carries the 2026-09-15 layer info card: how switched-on layers are found, the MTBS severity timeout, the LANDFIRE code table, and the only test harness that works.
+- `general.md` also carries the 2026-10-03 catch-up with prototype-tools: the six cherry-picked commits, the plugin id rename, what stayed this repo's own, and the two settings the Earth Engine sign-in still needs.

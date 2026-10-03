@@ -105,7 +105,7 @@ npm install                       # large; the monorepo has many workspaces
 
 cd /Volumes/PortableSSD/Github/disturbance-checker
 npm run package
-cp -R build/tuvsud-disturbance-check \
+cp -R build/disturbance-check \
   /Volumes/PortableSSD/Github/GeoLibre/apps/geolibre-desktop/public/plugins/
 
 cd /Volumes/PortableSSD/Github/GeoLibre

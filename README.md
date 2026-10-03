@@ -209,7 +209,7 @@ npm run package   # produce the drop-in layout under build/
 ```
 
 To try it against a local GeoLibre checkout, run `npm run package`, then copy
-`build/tuvsud-disturbance-check/` into
+`build/disturbance-check/` into
 `apps/geolibre-desktop/public/plugins/` and restart the GeoLibre dev server.
 Discovery happens at build and dev-server start, so a restart is required after
 adding or updating the folder.

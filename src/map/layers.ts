@@ -38,7 +38,7 @@ export interface ManagedLayer {
   nativeLayerIds: string[];
 }
 
-const PREFIX = "tuvsud-dc";
+const PREFIX = "dcheck";
 
 export class MapLayerManager {
   private managed = new Map<string, ManagedLayer>();
@@ -191,7 +191,7 @@ export class MapLayerManager {
         nativeLayerIds: [layerId],
         sourceIds: [sourceId],
         opacity: options.opacity ?? 1,
-        metadata: { sourceKind: "tuvsud-disturbance-check", ephemeral: true },
+        metadata: { sourceKind: "disturbance-check", ephemeral: true },
       });
     };
 
@@ -263,7 +263,7 @@ export class MapLayerManager {
         nativeLayerIds: [layerId],
         sourceIds: [sourceId],
         opacity: options.opacity ?? 1,
-        metadata: { sourceKind: "tuvsud-disturbance-check-reference" },
+        metadata: { sourceKind: "disturbance-check-reference" },
       });
     };
 
@@ -463,7 +463,7 @@ export class MapLayerManager {
             }
           : undefined,
         metadata: {
-          sourceKind: "tuvsud-disturbance-check-context",
+          sourceKind: "disturbance-check-context",
           role: options.role,
         },
       });

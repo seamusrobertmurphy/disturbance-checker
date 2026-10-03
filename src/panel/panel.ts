@@ -119,7 +119,7 @@ import {
 import { renderHistogramPlot } from "./histogram-plot";
 import { mountClimographPanel, yearColour } from "./climograph-plot";
 
-const OPEN_SECTIONS_KEY = "tuvsud.disturbance.openSections";
+const OPEN_SECTIONS_KEY = "disturbance.openSections";
 
 /**
  * How long any one corroborating registry gets before it is given up on.
@@ -740,7 +740,7 @@ export class DisturbancePanel {
   }
 
   private clearContext(role: ContextRole): void {
-    this.layers.remove(`tuvsud-dc-ctx-${role}`);
+    this.layers.remove(`dcheck-ctx-${role}`);
     const patch: Partial<State> = {
       context: { ...this.state.context, [role]: null },
     };
@@ -1936,7 +1936,7 @@ export class DisturbancePanel {
   private toggleLook(look: Look): void {
     const key = "ref-wayback";
     if (this.state.activeLook === look.capture.captureDate) {
-      this.layers.remove(`tuvsud-dc-${key}`);
+      this.layers.remove(`dcheck-${key}`);
       this.patch({ activeLook: null });
       return;
     }
@@ -2639,7 +2639,7 @@ export class DisturbancePanel {
 
     // The single combined layer earlier versions drew, so a session that
     // already has it on the map does not end up with the fires twice.
-    this.layers.remove("tuvsud-dc-ref-fire");
+    this.layers.remove("dcheck-ref-fire");
 
     const palette: Record<string, { color: string; name: string }> = {
       MTBS: { color: "#d7301f", name: "Fire, severity assessment (MTBS)" },
@@ -3061,7 +3061,7 @@ export class DisturbancePanel {
   private syncLayers(results: PeriodResult[]): string[] {
     // Clear only the raster products of the previous run. Uploaded site data
     // is left alone, because it did not come from a run and does not expire.
-    this.layers.removeByPrefix("tuvsud-dc-r-");
+    this.layers.removeByPrefix("dcheck-r-");
 
     const created: string[] = [];
     const order: Array<PeriodResult["layers"][number]["role"]> = [
@@ -3083,7 +3083,7 @@ export class DisturbancePanel {
             visible: layer.visible,
             opacity: layer.role === "rgb" ? RGB_LAYER_OPACITY : 1,
           });
-          created.push(`tuvsud-dc-r-${suffix}`);
+          created.push(`dcheck-r-${suffix}`);
         }
       }
     }
