@@ -1,12 +1,12 @@
 """Corroboration layers listed in GeoLibre's Layers panel when the site opens.
 
-The deploy writes these into the startup project, one folder per source and
-every folder collapsed. Only the carbon projects are drawn when the site opens,
-because with every layer on each pan sent hundreds of image requests to the
-federal services at once. The rest are switched on from the Layers panel, a
-layer or a whole folder at a time. Most are rasters drawn by the publisher's own
-map or image service, one 256 pixel image per map tile, so nothing is copied
-into this site and every layer is as current as its service.
+The deploy writes these into the startup project, one folder per source, every
+folder collapsed and switched off, and every layer inside it switched on. A
+folder's eye therefore shows a whole source with one click, and nothing is
+drawn until that click, because with every source on each pan sent hundreds of
+image requests to the federal services at once. Most are rasters drawn by the
+publisher's own map or image service, one 256 pixel image per map tile, so
+nothing is copied into this site and every layer is as current as its service.
 
 On 2026-09-13 every layer answered a browser request from
 https://prototype-tools.github.io with a CORS header and drew a tile, a zoom 4
@@ -458,20 +458,24 @@ def project_layers(fire_snapshot=None, roads_snapshot=None, site="", carbon_snap
     layers, groups = [], []
 
     for group_id, name, members, _ in reversed(folders):
+        # The folder opens switched off and every layer inside it switched on,
+        # so a first-time user turns a whole source on with the folder's eye
+        # and never finds the layers inside still off. GeoLibre draws a layer
+        # only when its own eye and its folder's eye are both on, so nothing
+        # is requested until that click; with every source on, each pan sent
+        # hundreds of image requests to the federal services at once, and on
+        # 2026-09-15 a session over the Olympic Peninsula logged 250 failed
+        # survey tiles in 26 seconds.
         groups.append({
             "id": group_id,
             "name": name,
             "collapsed": True,
-            "visible": True,
+            "visible": False,
             "opacity": 1,
         })
         for layer in reversed(members):
             layer["groupId"] = group_id
-            # Only the carbon projects are drawn when the site opens. With every
-            # layer on, each pan sent hundreds of image requests to the federal
-            # services at once, and on 2026-09-15 a session over the Olympic
-            # Peninsula logged 250 failed survey tiles in 26 seconds.
-            layer["visible"] = group_id == "corroboration-group-carbon"
+            layer["visible"] = True
             layers.append(layer)
     return layers, groups
 
