@@ -2,9 +2,9 @@ import {
   Breaks,
   DELTAS,
   DeltaId,
-  HISTOGRAM_MAX,
-  HISTOGRAM_MIN,
-  HISTOGRAM_STEPS,
+  HistogramSpec,
+  OpticalDeltaId,
+  deltaIdsFor,
 } from "../defaults";
 import type { CompositeBlock } from "../raster/composite";
 
@@ -72,7 +72,7 @@ export function indices(composite: CompositeBlock): Indices {
 export function computeDeltas(
   pre: CompositeBlock,
   post: CompositeBlock,
-): Record<DeltaId, Float32Array> {
+): Record<OpticalDeltaId, Float32Array> {
   const preIdx = indices(pre);
   const postIdx = indices(post);
   const length = pre.length;
@@ -130,13 +130,24 @@ export interface HistogramBin {
   count: number;
 }
 
-/** Empty bins matching the SOP's fixedHistogram(-0.5, 0.8, 130). */
-export function emptyHistogram(): HistogramBin[] {
-  const width = (HISTOGRAM_MAX - HISTOGRAM_MIN) / HISTOGRAM_STEPS;
-  return Array.from({ length: HISTOGRAM_STEPS }, (_, index) => ({
-    start: HISTOGRAM_MIN + index * width,
+/**
+ * Empty bins on a delta's own range, the SOP's fixedHistogram(-0.5, 0.8, 130)
+ * for the optical indices and -5 to 10 dB in 150 bins for the radar drop.
+ */
+export function emptyHistogram(id: DeltaId): HistogramBin[] {
+  const { min, max, steps } = DELTAS[id].histogram;
+  const width = (max - min) / steps;
+  return Array.from({ length: steps }, (_, index) => ({
+    start: min + index * width,
     count: 0,
   }));
+}
+
+/** The range a set of bins was built on, read back from the bins themselves. */
+export function histogramRange(bins: HistogramBin[]): HistogramSpec {
+  const width = bins.length > 1 ? bins[1].start - bins[0].start : 0.01;
+  const min = bins.length ? bins[0].start : 0;
+  return { min, max: min + width * bins.length, steps: bins.length, step: width };
 }
 
 /**
@@ -151,12 +162,12 @@ export function accumulateHistogram(
   bins: HistogramBin[],
   delta: Float32Array,
 ): void {
-  const width = (HISTOGRAM_MAX - HISTOGRAM_MIN) / HISTOGRAM_STEPS;
+  const { min, max, step: width } = histogramRange(bins);
   for (let i = 0; i < delta.length; i += 1) {
     const value = delta[i];
     if (Number.isNaN(value)) continue;
-    if (value < HISTOGRAM_MIN || value >= HISTOGRAM_MAX) continue;
-    const index = Math.floor((value - HISTOGRAM_MIN) / width);
+    if (value < min || value >= max) continue;
+    const index = Math.floor((value - min) / width);
     if (index >= 0 && index < bins.length) bins[index].count += 1;
   }
 }
@@ -190,8 +201,11 @@ export function classAreasHa(
   return [counts[0] * pixelHa, counts[1] * pixelHa, counts[2] * pixelHa];
 }
 
-/** Delta ids in the order the panel presents them. */
+/** Every delta id, both sensors, in the order the panel presents them. */
 export const DELTA_IDS = Object.keys(DELTAS) as DeltaId[];
+
+/** The three optical deltas a Sentinel-2 run produces. */
+export const OPTICAL_DELTA_IDS = deltaIdsFor("sentinel-2") as OpticalDeltaId[];
 
 // ---------------------------------------------------------------------------
 // Relative radiometric normalisation
@@ -227,6 +241,13 @@ export interface Normalisation {
   applicable: boolean;
   /** Why not, when it is not. Null when applicable. */
   refusal: string | null;
+  /**
+   * How the shift was found. The optical run reads it off the histogram peak
+   * and applies it by moving the breaks; the radar run takes the median of the
+   * drop over the boundary and subtracts it from every pixel, because its
+   * breaks were calibrated after that subtraction. Absent means peak.
+   */
+  method?: "peak" | "median";
 }
 
 /**
@@ -244,7 +265,7 @@ const STABLE_WINDOW = 0.05;
 const MIN_STABLE_SHARE = 0.5;
 
 export function normalisationOffset(bins: HistogramBin[]): Normalisation {
-  const width = (HISTOGRAM_MAX - HISTOGRAM_MIN) / HISTOGRAM_STEPS;
+  const width = histogramRange(bins).step;
   const total = bins.reduce((sum, bin) => sum + bin.count, 0);
   if (total === 0) {
     return {

@@ -22,8 +22,18 @@ describes the arrangement in full.
 
 ## 1. Imagery
 
-This section needs no settings. It states where the imagery comes from and how
-cloud is removed, and it holds two switches worth knowing about.
+The two buttons at the top choose the sensor. **Sentinel-2 optical** is the
+SOP's check, three spectral indices from a clear look at the ground in both
+windows. **Sentinel-1 radar** reads the drop in VH backscatter instead, which
+sees through cloud and snow and covers winter harvest on frozen ground; it
+produces one layer, dVH, and the windows in section 3 should then sit in the
+same part of winter either side of the period. The two runs keep their layers
+side by side on the map. [Radar canopy loss](radar-check.md) gives the method,
+the thresholds and their test.
+
+With the optical sensor the rest of this section needs no settings. It states
+where the imagery comes from and how cloud is removed, and it holds two
+switches worth knowing about.
 
 **Reject cast shadow** is on by default. In steep terrain it can remove most
 north-facing slopes from every scene in a window, which can cost more than the

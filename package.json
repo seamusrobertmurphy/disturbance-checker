@@ -1,7 +1,7 @@
 {
   "name": "disturbance-check",
-  "version": "0.13.1",
-  "description": "Sentinel-2 NDVI/NDMI/NBR pre-post disturbance screening for ACR IFM verification, as a GeoLibre plugin.",
+  "version": "0.14.0",
+  "description": "Sentinel-2 NDVI/NDMI/NBR and Sentinel-1 VH pre-post disturbance screening for ACR IFM verification, as a GeoLibre plugin.",
   "license": "MIT",
   "type": "module",
   "private": false,

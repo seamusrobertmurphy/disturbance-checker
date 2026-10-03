@@ -24,3 +24,4 @@
 - `general.md` also carries the 2026-09-15 layer info card: how switched-on layers are found, the MTBS severity timeout, the LANDFIRE code table, and the only test harness that works.
 - `general.md` also carries the 2026-10-03 catch-up with prototype-tools: the six cherry-picked commits, the plugin id rename, what stayed this repo's own, and the two settings the Earth Engine sign-in still needs.
 - `general.md` also carries the 2026-10-03 saved-project findings: why reopened projects listed empty run layers, the sweep that drops them, and the folder-off layers-on rule for the startup project.
+- `general.md` also carries the 2026-10-03 radar check: the Planetary Computer endpoints and token, the RTC file facts, the read cost, and why the median shift is always removed and water floored at -22 dB.

@@ -1,4 +1,4 @@
-import { Breaks, DeltaId, MIN_STABLE_SCENE_COUNT } from "./defaults";
+import { Breaks, DeltaId, MIN_STABLE_SCENE_COUNT, Sensor } from "./defaults";
 import { HistogramBin } from "./analysis/deltas";
 import { Period } from "./analysis/run";
 
@@ -16,6 +16,8 @@ export interface Diagnostic {
   detail: string;
   /** SOP section this rule encodes, shown in the run manifest. */
   source: string;
+  /** The sensor whose run raised it, so a rerun of one sensor keeps the other's. */
+  sensor?: Sensor;
 }
 
 export interface HistogramAnalysis {
@@ -144,7 +146,10 @@ export function analyseHistogram(
     });
   }
 
-  if (peakStart > 0.1) {
+  // Ten bins off zero: 0.1 on the optical indices, 1 dB on the radar drop,
+  // whose boundary median has already been taken out.
+  const binWidth = bins.length > 1 ? bins[1].start - bins[0].start : 0.01;
+  if (peakStart > binWidth * 10) {
     diagnostics.push({
       severity: "warning",
       title: "Distribution is not centred on zero",

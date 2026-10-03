@@ -3,7 +3,9 @@ import {
   CLASS_PALETTES,
   DeltaId,
   MIN_STABLE_SCENE_COUNT,
+  OpticalDeltaId,
   RGB_VIS,
+  Sensor,
 } from "../defaults";
 import {
   bestEpsgFor,
@@ -43,7 +45,7 @@ import { boundsOf, maskForBlock, rasterizeAoi } from "../raster/rasterize";
 import {
   CLASS_NODATA,
   ClassCounts,
-  DELTA_IDS,
+  OPTICAL_DELTA_IDS,
   HistogramBin,
   accumulateClassCounts,
   accumulateHistogram,
@@ -160,19 +162,42 @@ export interface DeltaResult {
   classifiedKey: string;
 }
 
+/**
+ * What a radar run saw, carried for the panel and the manifest.
+ *
+ * Every pixel is compared from the same relative orbit before and after, so
+ * the orbits kept and the scene counts say how well the two windows matched.
+ */
+export interface RadarReport {
+  /** Relative orbits imaged in both windows, ascending order. */
+  orbits: number[];
+  /** Pass directions of those orbits, "ascending" or "descending". */
+  passes: string[];
+  preScenes: number;
+  postScenes: number;
+  /** Scenes dropped because they sat on another UTM zone or another orbit. */
+  dropped: number;
+  /** The median drop over the boundary that was subtracted, in decibels. */
+  shiftDb: number;
+}
+
 export interface PeriodResult {
   periodId: string;
+  /** Which sensor produced it. A radar result holds only dVH. */
+  sensor: Sensor;
   preObservations: Observation[];
   postObservations: Observation[];
   /** Overpasses with no tile on the working grid, so genuinely unusable. */
   unreachable: Observation[];
-  deltas: Record<DeltaId, DeltaResult>;
+  deltas: Partial<Record<DeltaId, DeltaResult>>;
   layers: PaintedLayer[];
   grid: TargetGrid;
   /** The shift the unchanged ground showed, per index, and whether it was used. */
-  normalisation: Record<DeltaId, Normalisation>;
+  normalisation: Partial<Record<DeltaId, Normalisation>>;
   /** The breaks the classification actually ran on, shifted or not. */
-  breaksUsed: Record<DeltaId, Breaks>;
+  breaksUsed: Partial<Record<DeltaId, Breaks>>;
+  /** Present on a radar result only. */
+  radar?: RadarReport;
   aoiAreaHa: number;
   /** Pixels with at least one clear look in both windows. */
   observedPixels: number;
@@ -393,12 +418,12 @@ export async function runPeriod(
     );
   }
 
-  const histograms: Record<DeltaId, HistogramBin[]> = {
-    dNDVI: emptyHistogram(),
-    dNDMI: emptyHistogram(),
-    dNBR: emptyHistogram(),
+  const histograms: Record<OpticalDeltaId, HistogramBin[]> = {
+    dNDVI: emptyHistogram("dNDVI"),
+    dNDMI: emptyHistogram("dNDMI"),
+    dNBR: emptyHistogram("dNBR"),
   };
-  const counts: Record<DeltaId, ClassCounts> = {
+  const counts: Record<OpticalDeltaId, ClassCounts> = {
     dNDVI: [0, 0, 0],
     dNDMI: [0, 0, 0],
     dNBR: [0, 0, 0],
@@ -406,7 +431,7 @@ export async function runPeriod(
 
   // Full-extent result arrays. Only what the images and the tallies need.
   const total = grid.width * grid.height;
-  const classified: Record<DeltaId, Uint8Array> = {
+  const classified: Record<OpticalDeltaId, Uint8Array> = {
     dNDVI: new Uint8Array(total).fill(CLASS_NODATA),
     dNDMI: new Uint8Array(total).fill(CLASS_NODATA),
     dNBR: new Uint8Array(total).fill(CLASS_NODATA),
@@ -416,7 +441,7 @@ export async function runPeriod(
   // counted, and re-reading the imagery to apply it would double the network
   // cost of a run. Three more Float32 arrays beside the six the RGB layers
   // already hold.
-  const deltaGrid: Record<DeltaId, Float32Array> = {
+  const deltaGrid: Record<OpticalDeltaId, Float32Array> = {
     dNDVI: new Float32Array(total).fill(Number.NaN),
     dNDMI: new Float32Array(total).fill(Number.NaN),
     dNBR: new Float32Array(total).fill(Number.NaN),
@@ -467,7 +492,7 @@ export async function runPeriod(
     // the observed-pixel count all describe the same polygon.
     const clip = maskForBlock(aoiMask, block, grid);
     if (clip) {
-      for (const id of DELTA_IDS) {
+      for (const id of OPTICAL_DELTA_IDS) {
         const delta = deltas[id];
         for (let i = 0; i < clip.length; i += 1) {
           if (!clip[i]) delta[i] = Number.NaN;
@@ -480,7 +505,7 @@ export async function runPeriod(
       }
     }
 
-    for (const id of DELTA_IDS) {
+    for (const id of OPTICAL_DELTA_IDS) {
       accumulateHistogram(histograms[id], deltas[id]);
       scatter(deltaGrid[id], deltas[id], block, grid);
     }
@@ -504,13 +529,17 @@ export async function runPeriod(
   // operator has left it on and both guards pass. Applied by moving the SOP
   // breaks rather than the pixels, which classifies identically and leaves the
   // shift visible in the run manifest.
-  const normalisation: Record<DeltaId, Normalisation> = {
+  const normalisation: Record<OpticalDeltaId, Normalisation> = {
     dNDVI: normalisationOffset(histograms.dNDVI),
     dNDMI: normalisationOffset(histograms.dNDMI),
     dNBR: normalisationOffset(histograms.dNBR),
   };
-  const breaksUsed: Record<DeltaId, Breaks> = { ...params.breaks };
-  for (const id of DELTA_IDS) {
+  const breaksUsed: Record<OpticalDeltaId, Breaks> = {
+    dNDVI: params.breaks.dNDVI,
+    dNDMI: params.breaks.dNDMI,
+    dNBR: params.breaks.dNBR,
+  };
+  for (const id of OPTICAL_DELTA_IDS) {
     const found = normalisation[id];
     if (params.normalise && found.applicable) {
       breaksUsed[id] = shiftBreaks(params.breaks[id], found.offset);
@@ -555,8 +584,8 @@ export async function runPeriod(
     false,
   );
 
-  const deltaResults = {} as Record<DeltaId, DeltaResult>;
-  for (const id of DELTA_IDS) {
+  const deltaResults = {} as Record<OpticalDeltaId, DeltaResult>;
+  for (const id of OPTICAL_DELTA_IDS) {
     const classifiedKey = `${period.id}-${id}-class`;
     push(
       classifiedKey,
@@ -589,6 +618,7 @@ export async function runPeriod(
     preObservations: pre.observations,
     postObservations: post.observations,
     unreachable,
+    sensor: "sentinel-2" as Sensor,
     deltas: deltaResults,
     layers,
     grid,

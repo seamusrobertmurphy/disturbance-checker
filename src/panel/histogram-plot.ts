@@ -39,6 +39,10 @@ export function renderHistogramPlot(
   const domainMin = bins.length ? bins[0].start : -0.5;
   const domainMax = bins.length ? bins[bins.length - 1].start : 0.8;
   const span = domainMax - domainMin || 1;
+  // The bin width sets how finely a break can be placed: a hundredth on the
+  // optical indices, a tenth of a decibel on the radar drop.
+  const binWidth = bins.length > 1 ? bins[1].start - bins[0].start : 0.01;
+  const decimals = Math.max(0, Math.ceil(-Math.log10(binWidth)) + 1);
   const plotHeight = HEIGHT - PAD_BOTTOM;
 
   const toX = (value: number): number =>
@@ -147,7 +151,7 @@ export function renderHistogramPlot(
 
   const clampOrder = (key: BreakKey, value: number): number => {
     const bounded = Math.min(domainMax, Math.max(domainMin, value));
-    const step = 0.005;
+    const step = binWidth / 2;
     if (key === "low") return Math.min(bounded, breaks.moderate - step);
     if (key === "moderate") {
       return Math.min(Math.max(bounded, breaks.low + step), breaks.high - step);
@@ -156,7 +160,7 @@ export function renderHistogramPlot(
   };
 
   const applyBreak = (key: BreakKey, value: number): void => {
-    const next = Number(clampOrder(key, value).toFixed(3));
+    const next = Number(clampOrder(key, value).toFixed(decimals));
     if (next === breaks[key]) return;
     breaks = { ...breaks, [key]: next };
     const line = lines.get(key);
@@ -190,7 +194,7 @@ export function renderHistogramPlot(
     });
 
     hit.addEventListener("keydown", (event: KeyboardEvent) => {
-      const step = event.shiftKey ? 0.05 : 0.01;
+      const step = event.shiftKey ? binWidth * 5 : binWidth;
       if (event.key === "ArrowLeft") {
         event.preventDefault();
         applyBreak(key, breaks[key] - step);
@@ -201,8 +205,15 @@ export function renderHistogramPlot(
     });
   }
 
-  for (const tick of [-0.5, 0, 0.4, 0.8]) {
-    if (tick < domainMin || tick > domainMax) continue;
+  // The SOP range reads -0.5, 0, 0.4 and 0.8; any other range gets its two
+  // ends, zero where it falls inside, and a round mark between.
+  const ticks =
+    domainMin === -0.5 && Math.abs(domainMax - 0.79) < 0.02
+      ? [-0.5, 0, 0.4, 0.8]
+      : [...new Set([domainMin, 0, Math.round((domainMin + domainMax) / 2), domainMax])]
+          .filter((tick) => tick >= domainMin && tick <= domainMax)
+          .sort((a, b) => a - b);
+  for (const tick of ticks) {
     const label = svgEl("text", {
       x: toX(tick),
       y: HEIGHT - 3,

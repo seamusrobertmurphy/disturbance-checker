@@ -5,6 +5,7 @@ import {
   DEFAULT_MAX_CLOUD,
   DEFAULT_WINDOW_END_MONTH_DAY,
   DEFAULT_WINDOW_START_MONTH_DAY,
+  Sensor,
 } from "./defaults";
 import { Diagnostic, HistogramAnalysis } from "./diagnostics";
 import { Aoi, Period, PeriodResult } from "./analysis/run";
@@ -42,6 +43,11 @@ export interface ContextLayer {
 export interface State {
   aoi: Aoi | null;
   aoiLabel: string;
+  /**
+   * Which sensor the next run reads. Both sensors share the reporting period
+   * windows; the radar run needs them on frozen ground, which the panel says.
+   */
+  sensor: Sensor;
   periods: Period[];
   maxCloud: number;
   /** Which cloud mask is in force. */
@@ -171,7 +177,12 @@ export function defaultBreaks(): Record<DeltaId, Breaks> {
     dNDVI: { ...DELTAS.dNDVI.defaults },
     dNDMI: { ...DELTAS.dNDMI.defaults },
     dNBR: { ...DELTAS.dNBR.defaults },
+    dVH: { ...DELTAS.dVH.defaults },
   };
+}
+
+export function emptyJustifications(): Record<DeltaId, string> {
+  return { dNDVI: "", dNDMI: "", dNBR: "", dVH: "" };
 }
 
 export function createState(): State {
@@ -179,6 +190,7 @@ export function createState(): State {
   return {
     aoi: null,
     aoiLabel: "",
+    sensor: "sentinel-2",
     periods: [defaultPeriod("RP1", thisYear - 2, thisYear - 1)],
     maxCloud: DEFAULT_MAX_CLOUD,
     maskId: DEFAULT_MASK_ID,
@@ -187,7 +199,7 @@ export function createState(): State {
     context: { boundary: null, smz: null, plots: null, harvest: null },
 
     breaks: defaultBreaks(),
-    justifications: { dNDVI: "", dNDMI: "", dNBR: "" },
+    justifications: emptyJustifications(),
 
     status: "idle",
     progress: "",
@@ -261,6 +273,7 @@ export interface PersistedState {
   justifications: Record<DeltaId, string>;
   context: Record<ContextRole, ContextLayer | null>;
   normalise?: boolean;
+  sensor?: Sensor;
 }
 
 /**
@@ -291,6 +304,7 @@ export function toPersisted(state: State): PersistedState {
     version: 1,
     aoi: state.aoi,
     aoiLabel: state.aoiLabel,
+    sensor: state.sensor,
     periods: state.periods,
     maxCloud: state.maxCloud,
     normalise: state.normalise,
@@ -316,6 +330,10 @@ export function fromPersisted(state: State, raw: unknown): State {
     ...state,
     aoi: persisted.aoi ?? null,
     aoiLabel: persisted.aoiLabel ?? "",
+    sensor:
+      persisted.sensor === "sentinel-1" || persisted.sensor === "sentinel-2"
+        ? persisted.sensor
+        : state.sensor,
     periods:
       Array.isArray(persisted.periods) && persisted.periods.length > 0
         ? persisted.periods
@@ -328,8 +346,10 @@ export function fromPersisted(state: State, raw: unknown): State {
         : state.normalise,
     maskId: persisted.maskId ?? state.maskId,
     maskOptions: { ...state.maskOptions, ...(persisted.maskOptions ?? {}) },
-    breaks: persisted.breaks ?? state.breaks,
-    justifications: persisted.justifications ?? state.justifications,
+    // Merged over the defaults, so a project saved before a delta existed
+    // still carries that delta's breaks.
+    breaks: { ...defaultBreaks(), ...(persisted.breaks ?? {}) },
+    justifications: { ...emptyJustifications(), ...(persisted.justifications ?? {}) },
     context: {
       boundary: persisted.context?.boundary ?? null,
       smz: persisted.context?.smz ?? null,

@@ -8,6 +8,8 @@ import {
 import { formatHectares } from "./panel/dom";
 import { State, breaksDeviate } from "./state";
 import { EARTH_SEARCH_URL, S2_STAC_COLLECTION } from "./stac/search";
+import { PLANETARY_COMPUTER_SEARCH_URL, S1_STAC_COLLECTION } from "./stac/radar-search";
+import { RADAR_SMOOTH_M, RADAR_WATER_FLOOR_DB } from "./analysis/radar";
 import { CLOUD_MASKS } from "./raster/mask";
 import { GRID_RESOLUTION } from "./raster/grid";
 import {
@@ -35,7 +37,7 @@ export function buildManifest(state: State, runAt: Date): string {
   const lines: string[] = [];
 
   lines.push("Canopy Disturbance Check");
-  lines.push("Sentinel-2 NDVI / NDMI / NBR pre-post delta screening");
+  lines.push("Sentinel-2 NDVI / NDMI / NBR and Sentinel-1 VH pre-post delta screening");
   lines.push("");
 
   const mask = CLOUD_MASKS[state.maskId];
@@ -70,7 +72,19 @@ export function buildManifest(state: State, runAt: Date): string {
 
   for (const result of state.results) {
     const period = state.periods.find((entry) => entry.id === result.periodId);
-    lines.push(`--- ${result.periodId} ---`);
+    lines.push(`--- ${result.periodId}, ${result.sensor === "sentinel-1" ? "Sentinel-1 radar" : "Sentinel-2 optical"} ---`);
+    if (result.radar) {
+      lines.push(`  Catalogue     ${PLANETARY_COMPUTER_SEARCH_URL}`);
+      lines.push(`  Collection    ${S1_STAC_COLLECTION} (terrain-flattened gamma naught, VH, 10 m, Microsoft Planetary Computer)`);
+      lines.push(
+        `  Orbits        relative orbit${result.radar.orbits.length > 1 ? "s" : ""} ${result.radar.orbits.join(", ")} (${result.radar.passes.join(", ")}), ${result.radar.dropped} scene(s) dropped`,
+      );
+      lines.push(`  Reduction     per-pixel median of VH in decibels per window, ${RADAR_SMOOTH_M} m focal mean`);
+      lines.push(
+        `  Scene shift   median drop of ${result.radar.shiftDb >= 0 ? "+" : ""}${result.radar.shiftDb.toFixed(2)} dB over the boundary subtracted from every pixel`,
+      );
+      lines.push(`  Water         VH below ${RADAR_WATER_FLOOR_DB} dB in either window masked`);
+    }
     if (period) {
       lines.push(`  Pre window    ${period.preStart} to ${period.preEnd}`);
       lines.push(`  Post window   ${period.postStart} to ${period.postEnd}`);
@@ -103,23 +117,25 @@ export function buildManifest(state: State, runAt: Date): string {
     }
     lines.push("");
 
-    for (const id of Object.keys(DELTAS) as DeltaId[]) {
+    for (const id of Object.keys(result.deltas) as DeltaId[]) {
       const delta = result.deltas[id];
+      if (!delta) continue;
       const breaks = state.breaks[id];
       const deviated = breaksDeviate(state, id);
       const defaults = DELTAS[id].defaults;
       const analysis = state.analyses[result.periodId]?.[id];
 
+      const unit = DELTAS[id].unit;
       lines.push(`  ${id} (${DELTAS[id].direction})`);
       lines.push(
-        `    Breaks      Low ${breaks.low}, Moderate ${breaks.moderate}, High ${breaks.high}`,
+        `    Breaks      Low ${breaks.low}${unit}, Moderate ${breaks.moderate}${unit}, High ${breaks.high}${unit}`,
       );
 
       // The scene-wide shift, always recorded. A verifier reading this has to
       // be able to see both what the ground showed and which thresholds the
       // areas below were actually counted on.
       const shift = result.normalisation?.[id];
-      if (shift) {
+      if (shift && shift.method !== "median") {
         const applied = result.breaksUsed?.[id];
         const used =
           applied && applied.low !== breaks.low

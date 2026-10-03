@@ -3,6 +3,7 @@ import firstRun from "../../docs/first-run.md";
 import fromQgis from "../../docs/from-qgis.md";
 import interpretingResults from "../../docs/interpreting-results.md";
 import methods from "../../docs/methods.md";
+import radarCheck from "../../docs/radar-check.md";
 import revisionNotes from "../../docs/revision-notes.md";
 import seasonMatching from "../../docs/season-matching.md";
 import usingTheTool from "../../docs/using-the-tool.md";
@@ -62,6 +63,14 @@ export const GUIDES: Guide[] = [
       "Why the pre and post windows must sit at the same point of the season, what each index does through the year, four worked examples with the season charts, and the published work behind the rule.",
     audience: "operator",
     html: seasonMatching,
+  },
+  {
+    id: "radar-check",
+    title: "Radar canopy loss",
+    summary:
+      "The Sentinel-1 switch: what the VH drop measures, how each window is built from the same orbits, the frozen-ground windows, how the decibel thresholds were tested near Cochrane, and what to confirm before a radar patch is reported.",
+    audience: "operator",
+    html: radarCheck,
   },
   {
     id: "from-qgis",

@@ -4,9 +4,12 @@ import {
   CLASS_PALETTE,
   DELTAS,
   DeltaId,
+  Sensor,
+  deltaIdsFor,
 } from "../defaults";
 import {
   Diagnostic,
+  HistogramAnalysis,
   analyseHistogram,
   checkPeriod,
   checkSceneCounts,
@@ -19,6 +22,11 @@ import {
   aoiBounds,
   runPeriod,
 } from "../analysis/run";
+import {
+  RADAR_SMOOTH_M,
+  RADAR_WATER_FLOOR_DB,
+  runRadarPeriod,
+} from "../analysis/radar";
 import { describeClimateError, describeError } from "../errors";
 import { CLOUD_MASKS } from "../raster/mask";
 import {
@@ -99,6 +107,7 @@ import {
   isReadyToRun,
 } from "../state";
 import deltasSource from "../analysis/deltas.ts?raw";
+import radarSource from "../analysis/radar.ts?raw";
 import compositeSource from "../raster/composite.ts?raw";
 import maskSource from "../raster/mask.ts?raw";
 import { GeoLibreAppAPI } from "../types/geolibre";
@@ -120,6 +129,14 @@ import { renderHistogramPlot } from "./histogram-plot";
 import { mountClimographPanel, yearColour } from "./climograph-plot";
 
 const OPEN_SECTIONS_KEY = "disturbance.openSections";
+
+/**
+ * The layer key prefix of a sensor's run products, "r" for the optical run
+ * and "s1" for radar, so each sensor clears only its own layers.
+ */
+function runPrefix(sensor: Sensor): string {
+  return sensor === "sentinel-1" ? "s1" : "r";
+}
 
 /**
  * How long any one corroborating registry gets before it is given up on.
@@ -387,7 +404,7 @@ export class DisturbancePanel {
       el(
         "p",
         "dc-intro-text",
-        "Sentinel-2 NDVI, NDMI and NBR pre-post delta screening. This is an independent screening layer that complements, but does not replace, ground plots and developer monitoring reports.",
+        "Sentinel-2 NDVI, NDMI and NBR, or Sentinel-1 radar VH, pre-post delta screening. This is an independent screening layer that complements, but does not replace, ground plots and developer monitoring reports.",
       ),
     );
     return intro;
@@ -429,6 +446,7 @@ export class DisturbancePanel {
   }
 
   private summariseSource(): string {
+    if (this.state.sensor === "sentinel-1") return "Sentinel-1 RTC, VH radar";
     const mask = CLOUD_MASKS[this.state.maskId];
     return mask ? `Sentinel-2 L2A, ${mask.label}` : "Sentinel-2 L2A";
   }
@@ -470,17 +488,22 @@ export class DisturbancePanel {
 
   private renderThresholds(): HTMLElement {
     const body = el("div", "dc-stack");
+    const radar = this.state.sensor === "sentinel-1";
 
     body.appendChild(
       el(
         "p",
         "dc-hint",
-        "Each differenced index is classified into four classes. Anything below the Low threshold is undisturbed and renders transparent, so only disturbed cells are drawn over the site.",
+        radar
+          ? "The drop in VH is classified into four classes by how many decibels it fell. Anything below the Low threshold is undisturbed and renders transparent, so only disturbed cells are drawn over the site."
+          : "Each differenced index is classified into four classes. Anything below the Low threshold is undisturbed and renders transparent, so only disturbed cells are drawn over the site.",
       ),
     );
 
     // The switch sits here rather than under imagery because what it moves is
-    // the threshold, not the pixel.
+    // the threshold, not the pixel. The radar run has no switch: its breaks
+    // were calibrated on ground with the boundary median already removed, so
+    // the median is always taken out and reported with the result.
     const normalise = input("checkbox", String(this.state.normalise), () => {});
     normalise.checked = this.state.normalise;
     normalise.addEventListener("change", () => {
@@ -489,7 +512,15 @@ export class DisturbancePanel {
         status: this.state.status === "complete" ? "stale" : this.state.status,
       });
     });
-    body.appendChild(
+    if (radar) {
+      body.appendChild(
+        el(
+          "p",
+          "dc-hint",
+          "The median drop over the whole boundary is always subtracted before classifying, because the thresholds below were tested on ground with that shift removed. The amount removed is reported with the result.",
+        ),
+      );
+    } else body.appendChild(
       field(
         "Remove the scene-wide shift",
         normalise,
@@ -512,7 +543,7 @@ export class DisturbancePanel {
     });
     body.appendChild(legend);
 
-    for (const id of Object.keys(DELTAS) as DeltaId[]) {
+    for (const id of deltaIdsFor(this.state.sensor)) {
       const spec = DELTAS[id];
       const card = el("div", "dc-threshold");
 
@@ -542,11 +573,11 @@ export class DisturbancePanel {
           if (!Number.isFinite(parsed)) return;
           this.setBreak(id, key, parsed);
         });
-        control.step = "0.01";
-        control.min = "-0.5";
-        control.max = "0.8";
+        control.step = String(spec.histogram.step);
+        control.min = String(spec.histogram.min);
+        control.max = String(spec.histogram.max);
         grid.appendChild(
-          field(`${label} ≥`, control, `default ${spec.defaults[key]}`),
+          field(`${label} ≥`, control, `default ${spec.defaults[key]}${spec.unit}`),
         );
       }
       card.appendChild(grid);
@@ -555,7 +586,7 @@ export class DisturbancePanel {
     }
 
     body.appendChild(
-      button("Reset all to SOP defaults", () =>
+      button(radar ? "Reset to calibrated defaults" : "Reset all to SOP defaults", () =>
         this.patch({ breaks: defaultBreaks() }),
       ),
     );
@@ -577,7 +608,7 @@ export class DisturbancePanel {
     value: number,
   ): void {
     const current = { ...this.state.breaks[id] };
-    const step = 0.005;
+    const step = DELTAS[id].histogram.step / 2;
     current[key] = value;
     if (key === "low") current.low = Math.min(value, current.moderate - step);
     if (key === "moderate") {
@@ -791,7 +822,7 @@ export class DisturbancePanel {
     ]);
     const ids = keys.flatMap((key) => {
       const suffix = key.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
-      return [`dcheck-r-${suffix}`, `tuvsud-dc-r-${suffix}`];
+      return [`dcheck-r-${suffix}`, `dcheck-s1-${suffix}`, `tuvsud-dc-r-${suffix}`];
     });
     this.layers.dropUnmanaged(ids);
   }
@@ -809,18 +840,24 @@ export class DisturbancePanel {
    */
   private renderCode(): HTMLElement {
     const body = el("div", "dc-stack");
+    const radar = this.state.sensor === "sentinel-1";
     body.appendChild(
       el(
         "p",
         "dc-hint",
-        "These are the files this page is running, not a copy of them. Compositing and masking turn the scenes into one image per window; the indices and their differences turn that into the numbers in section 6.",
+        radar
+          ? "This is the file this page is running, not a copy of it. It finds the radar scenes, takes the median VH of each window in decibels, smooths it, removes the boundary median and classifies the drop into the numbers in section 6."
+          : "These are the files this page is running, not a copy of them. Compositing and masking turn the scenes into one image per window; the indices and their differences turn that into the numbers in section 6.",
       ),
     );
-    for (const [name, source] of [
-      ["src/raster/composite.ts", compositeSource],
-      ["src/raster/mask.ts", maskSource],
-      ["src/analysis/deltas.ts", deltasSource],
-    ] as Array<[string, string]>) {
+    const files: Array<[string, string]> = radar
+      ? [["src/analysis/radar.ts", radarSource]]
+      : [
+          ["src/raster/composite.ts", compositeSource],
+          ["src/raster/mask.ts", maskSource],
+          ["src/analysis/deltas.ts", deltasSource],
+        ];
+    for (const [name, source] of files) {
       body.appendChild(el("div", "dc-subhead", name));
       const pre = el("pre", "dc-code");
       pre.textContent = source;
@@ -831,6 +868,37 @@ export class DisturbancePanel {
 
   private renderSource(): HTMLElement {
     const body = el("div", "dc-stack");
+
+    // The sensor switch. Both share the area, the periods and the run bar;
+    // what changes is which catalogue is searched, what is read from each
+    // scene and which deltas come out.
+    const sensorRow = el("div", "dc-row");
+    const sensors: Array<[Sensor, string]> = [
+      ["sentinel-2", "Sentinel-2 optical"],
+      ["sentinel-1", "Sentinel-1 radar"],
+    ];
+    for (const [sensor, label] of sensors) {
+      const active = this.state.sensor === sensor;
+      sensorRow.appendChild(
+        button(
+          label,
+          () => {
+            if (this.state.sensor === sensor) return;
+            this.patch({
+              sensor,
+              status: this.state.status === "complete" ? "stale" : this.state.status,
+            });
+          },
+          active ? "primary" : "secondary",
+        ),
+      );
+    }
+    body.appendChild(sensorRow);
+
+    if (this.state.sensor === "sentinel-1") {
+      body.appendChild(this.renderRadarSource());
+      return body;
+    }
 
     body.appendChild(
       this.notice(
@@ -939,6 +1007,60 @@ export class DisturbancePanel {
     body.appendChild(codeRow);
     if (this.showCode) body.appendChild(this.renderCode());
 
+    return body;
+  }
+
+  /**
+   * What the radar check reads and how, under the sensor switch.
+   *
+   * Radar is not an alternative rendering of the optical check but a different
+   * measurement, so the operator is told what the number is before being
+   * shown a threshold for it.
+   */
+  private renderRadarSource(): HTMLElement {
+    const body = el("div", "dc-stack");
+    body.appendChild(
+      this.notice(
+        "info",
+        "No account needed",
+        "Radar comes from Microsoft's Planetary Computer, which publishes Copernicus Sentinel-1 as terrain-corrected gamma naught in cloud-optimised GeoTIFFs. Its catalogue answers anonymous requests, and this tab fetches a read token good for about an hour before it reads a pixel. Nothing is signed in to and nothing is stored.",
+      ),
+    );
+    body.appendChild(
+      el(
+        "p",
+        "dc-hint",
+        `Radar sees through cloud and darkness and is not hidden by snow, so it covers harvest in winter on frozen ground that the optical check has no clear look at. The VH channel, sent vertically and received horizontally, comes back mostly from branches and stems and falls when a stand is cut. Each window is the per-pixel median of every scene in it, in decibels, from the relative orbits imaged in both windows so a pixel is compared with itself seen from the same side; a ${RADAR_SMOOTH_M} m mean quiets the speckle every radar image carries; the earlier window less the later is the drop, so a positive value is loss; the median drop over the boundary is subtracted so that a colder or wetter winter, or the change from Sentinel-1A to Sentinel-1C in 2025, is not read as loss; and water, where VH falls below ${RADAR_WATER_FLOOR_DB} dB, is left out.`,
+      ),
+    );
+    body.appendChild(
+      this.notice(
+        "warning",
+        "Use frozen-ground windows",
+        "The reporting period windows in section 3 are shared with the optical check. For radar set both to the same part of winter either side of the period, after freeze-up and before thaw, 5 December to 4 February for example, so frozen ground is compared with frozen ground. Wet snow, melt and thaw move VH by more than a thinning does.",
+      ),
+    );
+    body.appendChild(
+      el(
+        "p",
+        "dc-hint",
+        "At the Low break of 2 dB, radar flagged 43.9 per cent of points inside Ontario's reported clearcuts and 3.8 per cent of unharvested ground near Cochrane, so it misses more than half of a clearcut's pixels and flags some ground that was not cut. A dVH patch is checked against the before and after views and the optical layers before it is reported. The Radar canopy loss guide gives the test and the literature.",
+      ),
+    );
+
+    const codeRow = el("div", "dc-row");
+    codeRow.appendChild(
+      button(
+        this.showCode ? "Hide the code" : "Show the code",
+        () => {
+          this.showCode = !this.showCode;
+          this.rerender();
+        },
+        "secondary",
+      ),
+    );
+    body.appendChild(codeRow);
+    if (this.showCode) body.appendChild(this.renderCode());
     return body;
   }
 
@@ -1110,10 +1232,14 @@ export class DisturbancePanel {
         ),
       );
 
-      for (const diagnostic of checkPeriod(period)) {
-        card.appendChild(
-          this.notice(diagnostic.severity, diagnostic.title, diagnostic.detail),
-        );
+      // The growing-season check is an optical rule. Radar wants the opposite,
+      // frozen ground, which section 1 says.
+      if (this.state.sensor === "sentinel-2") {
+        for (const diagnostic of checkPeriod(period)) {
+          card.appendChild(
+            this.notice(diagnostic.severity, diagnostic.title, diagnostic.detail),
+          );
+        }
       }
       body.appendChild(card);
     });
@@ -1131,6 +1257,9 @@ export class DisturbancePanel {
     }
 
     body.appendChild(this.renderClimate());
+
+    // Radar is not stopped by cloud, so the scene filter has nothing to act on.
+    if (this.state.sensor === "sentinel-1") return body;
 
     body.appendChild(
       el(
@@ -1593,17 +1722,35 @@ export class DisturbancePanel {
 
   private renderPeriodResult(result: PeriodResult): HTMLElement {
     const card = el("div", "dc-result");
-    card.appendChild(el("div", "dc-result-title", result.periodId));
+    const radar = result.sensor === "sentinel-1";
+    card.appendChild(
+      el(
+        "div",
+        "dc-result-title",
+        `${result.periodId}, ${radar ? "Sentinel-1 radar" : "Sentinel-2 optical"}`,
+      ),
+    );
+    const looks = radar ? "scenes" : "overpasses";
     card.appendChild(
       el(
         "div",
         "dc-result-meta",
-        `${result.preObservations.length} pre overpasses · ${result.postObservations.length} post overpasses · ${formatHectares(result.aoiAreaHa)} ha observed · EPSG:${result.grid.epsg} at ${result.grid.resolution} m`,
+        `${result.preObservations.length} pre ${looks} · ${result.postObservations.length} post ${looks} · ${formatHectares(result.aoiAreaHa)} ha observed · EPSG:${result.grid.epsg} at ${result.grid.resolution} m`,
       ),
     );
+    if (result.radar) {
+      card.appendChild(
+        el(
+          "div",
+          "dc-result-meta",
+          `relative orbit${result.radar.orbits.length > 1 ? "s" : ""} ${result.radar.orbits.join(", ")} (${result.radar.passes.join(", ")}) · boundary median of ${result.radar.shiftDb >= 0 ? "+" : ""}${result.radar.shiftDb.toFixed(2)} dB removed`,
+        ),
+      );
+    }
 
-    for (const id of Object.keys(DELTAS) as DeltaId[]) {
+    for (const id of Object.keys(result.deltas) as DeltaId[]) {
       const delta = result.deltas[id];
+      if (!delta) continue;
       const analysis = this.state.analyses[result.periodId]?.[id];
       const block = el("div", "dc-delta");
 
@@ -1630,6 +1777,7 @@ export class DisturbancePanel {
 
       const readout = el("div", "dc-breaks", "");
       readout.dataset.delta = id;
+      readout.dataset.period = result.periodId;
       block.appendChild(readout);
 
       const table = el("table", "dc-table");
@@ -1707,12 +1855,15 @@ export class DisturbancePanel {
   }
 
   private refreshBreakReadout(id: DeltaId): void {
-    const node = this.container?.querySelector(
+    const nodes = this.container?.querySelectorAll(
       `.dc-breaks[data-delta="${id}"]`,
     );
-    if (!node) return;
+    if (!nodes) return;
     const breaks = this.state.breaks[id];
-    node.textContent = `Low ${breaks.low.toFixed(2)} · Moderate ${breaks.moderate.toFixed(2)} · High ${breaks.high.toFixed(2)}`;
+    const unit = DELTAS[id].unit;
+    for (const node of nodes) {
+      node.textContent = `Low ${breaks.low.toFixed(2)}${unit} · Moderate ${breaks.moderate.toFixed(2)}${unit} · High ${breaks.high.toFixed(2)}${unit}`;
+    }
   }
 
   // Section 5 ---------------------------------------------------------------
@@ -1749,8 +1900,13 @@ export class DisturbancePanel {
       return body;
     }
 
+    const shown = this.currentResult();
     body.appendChild(
-      el("div", "dc-subhead", `Before and after, ${this.state.results[0]?.grid.resolution ?? ANALYSIS_SCALE} m`),
+      el(
+        "div",
+        "dc-subhead",
+        `Before and after, ${shown?.grid.resolution ?? ANALYSIS_SCALE} m${shown?.sensor === "sentinel-1" ? ", radar VH" : ""}`,
+      ),
     );
 
     const blend = el("input", "dc-range");
@@ -1985,10 +2141,11 @@ export class DisturbancePanel {
   }
 
   private applyBlend(value: number): void {
-    const result = this.state.results[0];
+    const result = this.currentResult();
     if (!result) return;
-    const pre = `r-${this.layerKeyFor(result, "pre-rgb")}`;
-    const post = `r-${this.layerKeyFor(result, "post-rgb")}`;
+    const prefix = runPrefix(result.sensor);
+    const pre = `${prefix}-${this.layerKeyFor(result, "pre-rgb")}`;
+    const post = `${prefix}-${this.layerKeyFor(result, "post-rgb")}`;
     this.layers.setVisible(pre, true);
     this.layers.setVisible(post, true);
     this.layers.setOpacity(pre, 1);
@@ -2002,10 +2159,11 @@ export class DisturbancePanel {
   }
 
   private stopBlend(): void {
-    const result = this.state.results[0];
+    const result = this.currentResult();
     if (!result) return;
-    this.layers.setVisible(`r-${this.layerKeyFor(result, "pre-rgb")}`, false);
-    this.layers.setVisible(`r-${this.layerKeyFor(result, "post-rgb")}`, false);
+    const prefix = runPrefix(result.sensor);
+    this.layers.setVisible(`${prefix}-${this.layerKeyFor(result, "pre-rgb")}`, false);
+    this.layers.setVisible(`${prefix}-${this.layerKeyFor(result, "post-rgb")}`, false);
     this.patch({ rgbBlendActive: false });
   }
 
@@ -2019,6 +2177,22 @@ export class DisturbancePanel {
   private layerKeyFor(result: PeriodResult, suffix: string): string {
     const layer = result.layers.find((entry) => entry.key.endsWith(suffix));
     return (layer?.key ?? "").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+  }
+
+  /**
+   * The result the visual tools act on: the first of the sensor now selected,
+   * or the first held when that sensor has not run.
+   */
+  private currentResult(): PeriodResult | undefined {
+    return (
+      this.state.results.find((result) => result.sensor === this.state.sensor) ??
+      this.state.results[0]
+    );
+  }
+
+  /** The optical result, which is the only one the sharpening can read. */
+  private opticalResult(): PeriodResult | undefined {
+    return this.state.results.find((result) => result.sensor === "sentinel-2");
   }
 
   // Section 8 ---------------------------------------------------------------
@@ -2799,8 +2973,17 @@ export class DisturbancePanel {
     const wrap = el("div", "dc-stack");
     wrap.appendChild(el("div", "dc-subhead", `Super-resolved backdrop, ${SHARP_SCALE} m`));
 
-    const result = this.state.results[0];
-    if (!result) return wrap;
+    // Sharpening reads the optical scenes, so a radar-only session has
+    // nothing to sharpen until an optical run has been made.
+    const result = this.opticalResult();
+    if (!result) {
+      if (this.state.results.length > 0) {
+        wrap.appendChild(
+          el("p", "dc-hint", "The sharpened backdrop is built from the Sentinel-2 scenes. Run the optical check to use it."),
+        );
+      }
+      return wrap;
+    }
 
     const bounds = this.mapBounds();
     if (!bounds) {
@@ -2992,13 +3175,29 @@ export class DisturbancePanel {
     });
 
     try {
+      const sensor = this.state.sensor;
+      const ids = deltaIdsFor(sensor);
       const results: PeriodResult[] = [];
+      // The other sensor's results, analyses and diagnostics are kept, so an
+      // optical run and a radar run can sit on the map together and be read
+      // against each other, which is how a radar patch is checked.
+      const kept = this.state.results.filter((result) => result.sensor !== sensor);
       const analyses: State["analyses"] = {};
-      const diagnostics: Diagnostic[] = [];
+      for (const [periodId, held] of Object.entries(this.state.analyses)) {
+        const rest = {} as Record<DeltaId, HistogramAnalysis>;
+        for (const [id, analysis] of Object.entries(held) as Array<[DeltaId, HistogramAnalysis]>) {
+          if (!ids.includes(id)) rest[id] = analysis;
+        }
+        if (Object.keys(rest).length > 0) analyses[periodId] = rest;
+      }
+      const diagnostics: Diagnostic[] = this.state.diagnostics.filter(
+        (diagnostic) => diagnostic.sensor !== undefined && diagnostic.sensor !== sensor,
+      );
+      const tag = (diagnostic: Diagnostic): Diagnostic => ({ ...diagnostic, sensor });
 
       for (const period of this.state.periods) {
-        diagnostics.push(...checkPeriod(period));
-        const result = await runPeriod(period, {
+        if (sensor === "sentinel-2") diagnostics.push(...checkPeriod(period).map(tag));
+        const runParams = {
           aoi: this.state.aoi,
           periods: this.state.periods,
           maxCloud: this.state.maxCloud,
@@ -3007,54 +3206,65 @@ export class DisturbancePanel {
           maskOptions: this.state.maskOptions,
           breaks: this.state.breaks,
           onProgress: (progress: string) => this.patch({ progress }),
-        });
+        };
+        const result =
+          sensor === "sentinel-1"
+            ? await runRadarPeriod(period, runParams)
+            : await runPeriod(period, runParams);
         results.push(result);
 
-        diagnostics.push(
-          ...checkSceneCounts(
-            period.id,
-            result.preObservations.length,
-            result.postObservations.length,
-          ),
-        );
+        if (sensor === "sentinel-2") {
+          diagnostics.push(
+            ...checkSceneCounts(
+              period.id,
+              result.preObservations.length,
+              result.postObservations.length,
+            ).map(tag),
+          );
+        }
         // Warnings raised inside the run are findings about the data, not
         // about the parameters, so they join the diagnostics rather than
         // sitting in a separate list the operator has to remember to read.
         for (const warning of result.warnings) {
           diagnostics.push({
             severity: "warning",
-            title: `${period.id} coverage`,
+            title: `${period.id} ${sensor === "sentinel-1" ? "radar" : "coverage"}`,
             detail: warning,
             source: "Run",
+            sensor,
           });
         }
 
-        const periodAnalyses = {} as Record<DeltaId, ReturnType<typeof analyseHistogram>>;
-        for (const id of Object.keys(DELTAS) as DeltaId[]) {
-          periodAnalyses[id] = analyseHistogram(
-            result.deltas[id].histogram,
-            this.state.breaks[id],
-          );
+        const periodAnalyses = {} as Record<DeltaId, HistogramAnalysis>;
+        for (const id of ids) {
+          const delta = result.deltas[id];
+          if (!delta) continue;
+          periodAnalyses[id] = analyseHistogram(delta.histogram, this.state.breaks[id]);
         }
-        analyses[period.id] = periodAnalyses;
+        analyses[period.id] = { ...(analyses[period.id] ?? {}), ...periodAnalyses } as Record<DeltaId, HistogramAnalysis>;
         diagnostics.push(
           ...collectDeltaDiagnostics(periodAnalyses).map((diagnostic) => ({
             ...diagnostic,
             title: `${period.id} ${diagnostic.title}`,
+            sensor,
           })),
         );
       }
 
       this.patch({ progress: "Adding layers" });
-      const layerIds = this.syncLayers(results);
+      const layerIds = this.syncLayers(results, sensor);
 
+      // Optical results first, then radar, each in period order.
+      const ordered = [...kept, ...results].sort((a, b) =>
+        a.sensor === b.sensor ? 0 : a.sensor === "sentinel-2" ? -1 : 1,
+      );
       this.patch({
         status: "complete",
         progress: "",
-        results,
+        results: ordered,
         analyses,
         diagnostics,
-        layerIds,
+        layerIds: [...this.state.layerIds.filter((id) => !layerIds.includes(id)), ...layerIds],
         runStartedAt: Date.now(),
       });
       this.open.add("results");
@@ -3081,10 +3291,14 @@ export class DisturbancePanel {
    * The run emits them tagged by role; the order is imposed here so that
    * changing what a run produces cannot quietly reshuffle the map.
    */
-  private syncLayers(results: PeriodResult[]): string[] {
-    // Clear only the raster products of the previous run. Uploaded site data
-    // is left alone, because it did not come from a run and does not expire.
-    this.layers.removeByPrefix("dcheck-r-");
+  private syncLayers(results: PeriodResult[], sensor: Sensor): string[] {
+    // Clear only the raster products of this sensor's previous run. Uploaded
+    // site data is left alone, because it did not come from a run and does
+    // not expire, and the other sensor's layers stay so the two can be read
+    // against each other.
+    const prefix = runPrefix(sensor);
+    this.layers.removeByPrefix(`dcheck-${prefix}-`);
+    const both = this.state.results.some((held) => held.sensor !== sensor);
 
     const created: string[] = [];
     const order: Array<PeriodResult["layers"][number]["role"]> = [
@@ -3093,20 +3307,21 @@ export class DisturbancePanel {
     ];
 
     for (const result of results) {
-      const prefix = results.length > 1 ? `${result.periodId} ` : "";
+      const periodTag = results.length > 1 ? `${result.periodId} ` : "";
       for (const role of order) {
         for (const layer of result.layers) {
           if (layer.role !== role) continue;
           const suffix = layer.key.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+          const tag = both && sensor === "sentinel-1" ? " (radar)" : "";
           this.layers.addRaster({
-            key: `r-${suffix}`,
-            name: `${prefix}${layer.name}`,
+            key: `${prefix}-${suffix}`,
+            name: `${periodTag}${layer.name}${tag}`,
             dataUrl: layer.dataUrl,
             coordinates: layer.coordinates,
             visible: layer.visible,
             opacity: layer.role === "rgb" ? RGB_LAYER_OPACITY : 1,
           });
-          created.push(`dcheck-r-${suffix}`);
+          created.push(`dcheck-${prefix}-${suffix}`);
         }
       }
     }

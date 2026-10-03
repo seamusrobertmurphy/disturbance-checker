@@ -1,8 +1,8 @@
 {
   "id": "disturbance-check",
   "name": "Disturbance Check",
-  "version": "0.13.1",
-  "description": "Sentinel-2 NDVI/NDMI/NBR pre-post delta screening for ACR IFM verification.",
+  "version": "0.14.0",
+  "description": "Sentinel-2 NDVI/NDMI/NBR and Sentinel-1 VH pre-post delta screening for ACR IFM verification.",
   "entry": "dist/index.js",
   "style": "dist/style.css"
 }
