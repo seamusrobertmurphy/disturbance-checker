@@ -2792,7 +2792,7 @@ export class DisturbancePanel {
       el(
         "p",
         "dc-hint",
-        `Reconstructs the four 10 m bands over this view at ${SHARP_SCALE} m in ${check.tiles} model tiles, using SEN2SRLite from the OpenSR project at the Image Processing Laboratory, University of Valencia, funded by the European Space Agency Φ-lab. Donike, Portalés-Juliá, Aybar and Gómez-Chova assessed this family of models in Geomatics in September 2026 and found that visual sharpness on its own does not establish that the added detail is real, so what you see is a reconstruction and never a measurement. Read it to tell a cutblock from a road from a windthrow gap from a shadow, and cite an area from the classified layers instead. Zooming or panning does not update it, so sharpen again for the new view.`,
+        `SEN2SRLite reconstructs this view at ${SHARP_SCALE} m from the four native 10 m bands, ${check.tiles} tiles of 128 pixels. It is a 572,336 parameter fully convolutional network, residual blocks with sub-pixel upsampling, from ESA OpenSR at the Image Processing Laboratory, University of Valencia. It is single-date and deterministic, inferring detail from spatial context inside each tile rather than from the time series, so the same view returns the same picture every run. Donike and colleagues (Geomatics, 2026) show that added sharpness alone does not establish that the detail is real, so read it to tell a cutblock from a road from a windthrow gap from a shadow, and quote areas from the classified layers. Sharpen again after zooming or panning.`,
       ),
     );
 
