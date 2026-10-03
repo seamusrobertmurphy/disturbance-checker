@@ -3,9 +3,10 @@ name: Build and deploy
 # Builds the plugin, drops it into a pinned GeoLibre checkout as a bundled
 # plugin, builds the GeoLibre web app, and publishes the result to GitHub Pages.
 #
-# No secrets are involved. The plugin reads open imagery from public endpoints
-# that answer anonymous requests, so there is no client ID to inject and no
-# credential that could leak into the published bundle.
+# The plugin reads open imagery from public endpoints that answer anonymous
+# requests, so nothing it does needs a credential. GeoLibre's own Earth Engine
+# panel does, and it is configured from two repository variables below. No
+# secret is involved: a browser OAuth client id is public by design.
 #
 # GeoLibre is never vendored into this repository. It is checked out here at a
 # pinned tag so a deploy is reproducible and an upstream change cannot alter
@@ -129,6 +130,31 @@ jobs:
           # GitHub Pages serves this project from a subpath, so the app must be
           # built with a matching base or every asset URL 404s.
           GEOLIBRE_APP_BASE: /${{ github.event.repository.name }}/
+          # GeoLibre's own Earth Engine panel, which is separate from this
+          # plugin and is the only part of the app that wants a Google account.
+          #
+          # Left unset, GeoLibre falls back to the OAuth client id compiled
+          # into its own source, 141292844612-gitmgm28...apps.googleusercontent
+          # .com, which belongs to opengeos and does not list this site as an
+          # authorized JavaScript origin. Google refuses the sign-in before any
+          # account is involved, answering the authorization request with
+          # redirect_uri_mismatch and "register the JavaScript origin in the
+          # Google Cloud Console", naming origin https://prototype-tools.github
+          # .io. Verified against accounts.google.com on 2026-09-08.
+          #
+          # The override lands because GeoLibre reads these through its own
+          # importMetaEnv() in packages/plugins/src/plugins/earth-engine-auth
+          # .ts, which Vite resolves during this step. The maplibre-gl-earth-
+          # engine npm package also reads them, but its copy was frozen when
+          # that package was published, which is why its compiled env still
+          # reports BASE_URL "/" while GeoLibre's reports the Pages subpath.
+          #
+          # These are repository variables, not secrets. A browser OAuth client
+          # id is public by design and is served to every visitor; who may sign
+          # in is governed by the consent screen's user list and by Earth
+          # Engine access on the account, not by hiding this string.
+          VITE_GEE_OAUTH_CLIENT_ID: ${{ vars.GEE_OAUTH_CLIENT_ID }}
+          VITE_GEE_PROJECT_ID: ${{ vars.GEE_PROJECT_ID || 'murphys-deforisk' }}
         run: |
           npm ci
           # MapLibre's image queue drainer reads abortController off entries it
