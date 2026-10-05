@@ -104,6 +104,7 @@ import {
   State,
   breaksDeviate,
   defaultBreaks,
+  aoiProblem,
   isReadyToRun,
   reversedWindow,
 } from "../state";
@@ -1088,12 +1089,31 @@ export class DisturbancePanel {
     }
     body.appendChild(kindRow);
 
-    if (this.state.context.boundary) {
+    // The notice is shown only while the boundary really is the area. Bounds
+    // or GeoJSON replaces the area without unloading the boundary, so the
+    // button below puts the boundary back.
+    const boundary = this.state.context.boundary;
+    const usingBoundary =
+      boundary !== null &&
+      aoi?.kind === "geojson" &&
+      Boolean(aoi.geometry) &&
+      this.state.aoiLabel === boundary.name;
+    if (boundary && usingBoundary) {
       body.appendChild(
         this.notice(
           "info",
           "Using the uploaded project boundary",
-          `${this.state.context.boundary.name} is set as the area of interest. Load a different boundary under Site data to change it.`,
+          `${boundary.name} is set as the area of interest. Load a different boundary under Site data to change it.`,
+        ),
+      );
+    } else if (boundary?.geojson) {
+      body.appendChild(
+        button(`Use the uploaded boundary, ${boundary.name}`, () =>
+          this.patch({
+            aoi: { kind: "geojson", geometry: boundary.geojson },
+            aoiLabel: boundary.name,
+            error: null,
+          }),
         ),
       );
     } else {
@@ -1650,7 +1670,7 @@ export class DisturbancePanel {
         el(
           "span",
           "dc-runbar-hint",
-          this.state.aoi ? reversedWindow(this.state) ?? "" : "Set an area of interest first.",
+          aoiProblem(this.state) ?? reversedWindow(this.state) ?? "",
         ),
       );
     }

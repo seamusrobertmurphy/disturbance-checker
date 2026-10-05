@@ -241,7 +241,25 @@ export function createState(): State {
  * are both open, so an area of interest is the only prerequisite.
  */
 export function isReadyToRun(state: State): boolean {
-  return state.aoi !== null && state.periods.length > 0 && !reversedWindow(state);
+  return !aoiProblem(state) && state.periods.length > 0 && !reversedWindow(state);
+}
+
+/**
+ * Why the area of interest cannot be searched, said in words, or null.
+ *
+ * The Bounds button starts a rectangle at 0, 0, 0, 0, and a run on it sent
+ * Earth Search a single point off West Africa, which it refused with a 400.
+ */
+export function aoiProblem(state: State): string | null {
+  const aoi = state.aoi;
+  if (!aoi) return "Set an area of interest first.";
+  if (aoi.kind === "rectangle" && (aoi.west === aoi.east || aoi.south === aoi.north)) {
+    return "The area of interest has no size. Enter four bounds, use the current map view, or load a project boundary.";
+  }
+  if (aoi.kind === "geojson" && !aoi.geometry) {
+    return "The area of interest has no geometry. Paste one, or load a project boundary.";
+  }
+  return null;
 }
 
 /**
