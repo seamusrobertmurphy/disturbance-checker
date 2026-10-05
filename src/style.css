@@ -1,6 +1,10 @@
 /* Plugin stylesheets are injected globally into the host document, so every
    selector here is prefixed with dc- and scoped under .dc-root. Colours are
-   expressed as CSS variables that follow the host's light and dark themes. */
+   expressed as CSS variables that follow the host's light and dark themes.
+   GeoLibre marks dark mode with a dark class on the root element and lets a
+   person override the computer's setting, so the computer's own preference is
+   never read here: a dark computer showing GeoLibre in light mode would
+   otherwise paint pale text on a pale panel. */
 
 .dc-root {
   --dc-fg: #1a1d21;
@@ -22,16 +26,6 @@
   line-height: 1.45;
   color: var(--dc-fg);
   overflow-y: auto;
-}
-
-@media (prefers-color-scheme: dark) {
-  .dc-root {
-    --dc-fg: #e6edf3;
-    --dc-fg-muted: #9aa7b4;
-    --dc-surface: rgba(255, 255, 255, 0.05);
-    --dc-border: rgba(255, 255, 255, 0.16);
-    --dc-accent: #58a6ff;
-  }
 }
 
 :root.dark .dc-root,
@@ -627,16 +621,6 @@ select.dc-input {
   color: var(--dc-fg);
   font-size: 12px;
   line-height: 1.5;
-}
-
-@media (prefers-color-scheme: dark) {
-  .dc-help {
-    --dc-fg: #e6edf3;
-    --dc-fg-muted: #9aa7b4;
-    --dc-surface: rgba(255, 255, 255, 0.05);
-    --dc-border: rgba(255, 255, 255, 0.16);
-    --dc-accent: #58a6ff;
-  }
 }
 
 :root.dark .dc-help,
