@@ -86,9 +86,33 @@ export class CogCache {
     return held;
   }
 
+  /** Drop a handle whose header read failed, so the next open tries again. */
+  forget(href: string): void {
+    this.handles.delete(shardHref(href));
+  }
+
   clear(): void {
     this.handles.clear();
   }
+}
+
+/**
+ * Waits before the second and third attempt at a failed read.
+ *
+ * A large run issues thousands of range requests, and on 5 October 2026 one
+ * dropped connection out of those thousands ended a whole run over the
+ * Northern Cheyenne boundary. geotiff.js keeps no failed byte range, so a
+ * second read of the same handle fetches it afresh.
+ */
+const RETRY_WAITS_MS = [1000, 3000];
+
+function isTransient(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === "AbortError") return false;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return (
+    error instanceof TypeError ||
+    /failed to fetch|networkerror|load failed|\b(429|5\d\d)\b/i.test(message)
+  );
 }
 
 export interface ReadOptions {
@@ -120,16 +144,34 @@ export async function readAssetBlock(
   block: GridBlock,
   options: ReadOptions = {},
 ): Promise<Float32Array> {
-  const tiff = await cache.open(href);
-  const result = await tiff.readRasters({
-    bbox: block.bbox,
-    width: block.width,
-    height: block.height,
-    interleave: false,
-    fillValue: NODATA,
-    resampleMethod: options.resampleMethod ?? "nearest",
-    signal: options.signal,
-  });
+  let result: unknown;
+  for (let attempt = 0; ; attempt += 1) {
+    let opened = false;
+    try {
+      const tiff = await cache.open(href);
+      opened = true;
+      result = await tiff.readRasters({
+        bbox: block.bbox,
+        width: block.width,
+        height: block.height,
+        interleave: false,
+        fillValue: NODATA,
+        resampleMethod: options.resampleMethod ?? "nearest",
+        signal: options.signal,
+      });
+      break;
+    } catch (error) {
+      if (options.signal?.aborted || !isTransient(error)) throw error;
+      if (attempt >= RETRY_WAITS_MS.length) {
+        const file = href.split("?")[0].split("/").slice(-2).join("/");
+        throw new Error(
+          `The image ${file} could not be downloaded after ${attempt + 1} attempts. The image store dropped the connection; running the check again usually works.`,
+        );
+      }
+      if (!opened) cache.forget(href);
+      await new Promise((resolve) => setTimeout(resolve, RETRY_WAITS_MS[attempt]));
+    }
+  }
 
   const band = (result as unknown as ArrayLike<ArrayLike<number>>)[0];
   const out = new Float32Array(block.width * block.height);
