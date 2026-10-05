@@ -286,8 +286,17 @@ export async function searchScenes(params: SearchParams): Promise<StacScene[]> {
       signal: params.signal,
     });
     if (!response.ok) {
+      // A 400 is a refused request, not an outage, and Earth Search says why in
+      // the body, such as a window whose start falls after its end.
+      const reason =
+        response.status === 400
+          ? ((await response.json().catch(() => null)) as { description?: string } | null)
+              ?.description
+          : undefined;
       throw new Error(
-        `Earth Search returned ${response.status} ${response.statusText}. The catalogue may be briefly unavailable; try again in a moment.`,
+        reason
+          ? `Earth Search refused the search: ${reason}.`
+          : `Earth Search returned ${response.status} ${response.statusText}. The catalogue may be briefly unavailable; try again in a moment.`,
       );
     }
     const payload = (await response.json()) as StacResponse;

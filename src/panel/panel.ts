@@ -105,6 +105,7 @@ import {
   breaksDeviate,
   defaultBreaks,
   isReadyToRun,
+  reversedWindow,
 } from "../state";
 import deltasSource from "../analysis/deltas.ts?raw";
 import radarSource from "../analysis/radar.ts?raw";
@@ -1646,7 +1647,11 @@ export class DisturbancePanel {
 
     if (blocked && !running) {
       bar.appendChild(
-        el("span", "dc-runbar-hint", "Set an area of interest first."),
+        el(
+          "span",
+          "dc-runbar-hint",
+          this.state.aoi ? reversedWindow(this.state) ?? "" : "Set an area of interest first.",
+        ),
       );
     }
 

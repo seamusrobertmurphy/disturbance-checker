@@ -241,7 +241,28 @@ export function createState(): State {
  * are both open, so an area of interest is the only prerequisite.
  */
 export function isReadyToRun(state: State): boolean {
-  return state.aoi !== null && state.periods.length > 0;
+  return state.aoi !== null && state.periods.length > 0 && !reversedWindow(state);
+}
+
+/**
+ * The first window whose Date A falls after its Date B, said in words, or null.
+ *
+ * The catalogue refuses such a window with a bare 400, so the run is held back
+ * and the panel names the window instead.
+ */
+export function reversedWindow(state: State): string | null {
+  for (const period of state.periods) {
+    const windows = [
+      ["Start", period.preStart, period.preEnd],
+      ["End", period.postStart, period.postEnd],
+    ] as const;
+    for (const [name, open, close] of windows) {
+      if (open > close) {
+        return `${period.id} ${name} window: Date A ${open} falls after Date B ${close}.`;
+      }
+    }
+  }
+  return null;
 }
 
 export function breaksDeviate(state: State, id: DeltaId): boolean {
